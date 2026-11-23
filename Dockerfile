@@ -17,7 +17,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Layout mirrors the repo, because config.py resolves PROJECT_ROOT as two levels above the package:
-#   /app/backend  /app/config  /app/frontend/dist  /app/data (mount a persistent disk here)
+#   /app/backend  /app/config  /app/frontend/dist
+# All data lives in Postgres (ANALYST_DATABASE_URL); the container keeps no state.
 WORKDIR /app
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install -r backend/requirements.txt
@@ -25,7 +26,6 @@ RUN pip install -r backend/requirements.txt
 COPY backend/ backend/
 COPY config/ config/
 COPY --from=frontend /app/frontend/dist frontend/dist
-RUN mkdir -p data
 
 WORKDIR /app/backend
 EXPOSE 8000

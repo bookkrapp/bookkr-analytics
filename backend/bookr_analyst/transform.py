@@ -1,6 +1,4 @@
-"""Derived analytics tables, built inside DuckDB right after each sync."""
-import duckdb
-
+"""Derived analytics tables, built in Postgres (schema being synced) right after each sync."""
 from .config import settings
 
 # Card / panel types that mean "the user was shown bookable search results".
@@ -19,23 +17,27 @@ STAGES = [
 ]
 
 
-def build(con: duckdb.DuckDBPyConnection) -> None:
+def build(con) -> None:
     off = int(settings.tz_offset_minutes)
+    _index(con, RAW_INDEXES)
     con.execute(
         """
         CREATE TABLE users AS
         SELECT id AS user_id, email_domain,
                email_domain = 'anonymous.bookkr.local' AS is_guest,
-               (list_contains($ids, id) OR list_contains($domains, email_domain)) AS is_internal,
+               (id = ANY($ids) OR email_domain = ANY($domains)) AS is_internal,
                signup_source, created_at, last_login_at, deleted_at
         FROM raw_users
         """,
         {"ids": list(settings.internal_user_ids) or [""], "domains": list(settings.internal_email_domains) or [""]},
     )
 
+    _index(con, [("users", "user_id", "INCLUDE (is_internal)")])  # the internal-user filter runs once per row
+
+    # a view, not a copy: messages are the biggest table and the database is billed by size
     con.execute(f"""
-        CREATE TABLE messages AS
-        SELECT *, created_at + INTERVAL {off} MINUTE AS created_local
+        CREATE VIEW messages AS
+        SELECT *, created_at + INTERVAL '{off} minutes' AS created_local
         FROM raw_messages WHERE deleted_at IS NULL
     """)
 
@@ -48,7 +50,7 @@ def build(con: duckdb.DuckDBPyConnection) -> None:
                    count(*) FILTER (WHERE role = 'ASSISTANT') AS n_assistant_msgs,
                    min(created_at) AS first_msg_at, max(created_at) AS last_msg_at,
                    bool_or(card_type = 'intent_confirmation') AS has_intent_card,
-                   bool_or(list_contains($result_cards, card_type)) AS has_result_card,
+                   bool_or(card_type = ANY($result_cards)) AS has_result_card,
                    bool_or(card_type = 'payment_result') AS has_payment_card,
                    count(*) FILTER (WHERE kind = 'shared_failure') AS n_failure_msgs
             FROM messages GROUP BY 1),
@@ -68,7 +70,7 @@ def build(con: duckdb.DuckDBPyConnection) -> None:
         base AS (
             SELECT s.id AS session_id, s.user_id, coalesce(u.is_internal, false) AS is_internal,
                    coalesce(u.is_guest, false) AS is_guest, s.title, s.chat_type, s.is_group_chat,
-                   s.created_at, s.created_at + INTERVAL {off} MINUTE AS created_local, s.updated_at,
+                   s.created_at, s.created_at + INTERVAL '{off} minutes' AS created_local, s.updated_at,
                    coalesce(f.current_flow, 'none') AS current_flow,
                    f.flight_state->>'status' AS flight_state_status,
                    f.multi_city_state->>'phase' AS multi_city_phase,
@@ -77,7 +79,8 @@ def build(con: duckdb.DuckDBPyConnection) -> None:
                    m.first_msg_at, m.last_msg_at,
                    coalesce(m.has_intent_card, false) AS has_intent_card,
                    coalesce(m.has_result_card, false)
-                     OR list_has_any(from_json(coalesce(s.panel_card_types, '[]'), '["VARCHAR"]'), $result_panels)
+                     OR EXISTS (SELECT 1 FROM json_array_elements_text(coalesce(s.panel_card_types, '[]'::json)) pc(t)
+                                WHERE pc.t = ANY($result_panels))
                      AS has_results,
                    coalesce(m.has_payment_card, false) AS has_payment_card,
                    coalesce(m.n_failure_msgs, 0) AS n_failure_msgs,
@@ -105,7 +108,8 @@ def build(con: duckdb.DuckDBPyConnection) -> None:
                     WHEN n_flight_searches + n_hotel_searches > 0 THEN 4
                     WHEN has_intent_card OR flight_state_status = 'intent_ready' OR multi_city_phase IS NOT NULL THEN 3
                     WHEN n_user_msgs > 0 THEN 2 ELSE 1 END AS stage_level,
-               date_diff('second', first_msg_at, first_search_at) / 60.0 AS minutes_to_first_search,
+               (extract(epoch FROM date_trunc('second', first_search_at))
+                 - extract(epoch FROM date_trunc('second', first_msg_at))) / 60.0 AS minutes_to_first_search,
                (SELECT count(*) FROM messages mm
                  WHERE mm.chat_session_id = b.session_id AND mm.role = 'USER'
                    AND (b.first_search_at IS NULL OR mm.created_at < b.first_search_at)) AS user_msgs_before_search
@@ -119,14 +123,15 @@ def build(con: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE booking_ops AS
         WITH meta AS (SELECT synced_at FROM sync_meta LIMIT 1)
         SELECT b.*, coalesce(u.is_internal, false) AS is_internal,
-               b.created_at + INTERVAL {off} MINUTE AS created_local,
-               round(date_diff('minute', b.updated_at, meta.synced_at) / 60.0, 1) AS hours_since_update,
+               b.created_at + INTERVAL '{off} minutes' AS created_local,
+               round((extract(epoch FROM date_trunc('minute', meta.synced_at))
+                      - extract(epoch FROM date_trunc('minute', b.updated_at))) / 3600.0, 1) AS hours_since_update,
                CASE
                  WHEN b.status = 'FAILED' AND b.payment_status IN ('CAPTURED','VOID_PENDING','CAPTURED_AWAITING_PROVIDER') THEN 'critical'
                  WHEN b.status IN ('PENDING','PENDING_BOOK','PENDING_PAYMENT')
                       AND b.payment_status IN ('CAPTURED','CAPTURED_AWAITING_PROVIDER') THEN 'critical'
                  WHEN b.status IN ('PENDING','PENDING_BOOK','PENDING_PAYMENT')
-                      AND b.updated_at < meta.synced_at - INTERVAL 30 MINUTE THEN 'warning'
+                      AND b.updated_at < meta.synced_at - INTERVAL '30 minutes' THEN 'warning'
                  WHEN b.status = 'BOOKED' AND b.confirmation_email_sent_at IS NULL THEN 'warning'
                  WHEN b.status = 'FAILED' THEN 'info'
                  ELSE 'ok' END AS severity,
@@ -149,3 +154,31 @@ def build(con: duckdb.DuckDBPyConnection) -> None:
         CROSS JOIN meta
         LEFT JOIN users u ON u.user_id = b.user_id
     """)
+    _index(con, DERIVED_INDEXES)
+
+
+def _index(con, indexes) -> None:
+    for table, cols, *rest in indexes:
+        con.execute(f"CREATE INDEX ON {table} ({cols}) {rest[0] if rest else ''}")
+    for table in sorted({i[0] for i in indexes}):
+        con.execute(f"ANALYZE {table}")
+
+
+# Postgres needs indexes for the per-chat and per-user lookups the dashboards make.
+RAW_INDEXES = [
+    ("raw_users", "id"), ("raw_chat_sessions", "id"),
+    ("raw_messages", "chat_session_id, created_at"), ("raw_messages", "created_at"), ("raw_messages", "user_id"),
+    # user messages by time, readable from the index alone (KPI counts)
+    ("raw_messages", "created_at", "INCLUDE (user_id, chat_session_id) WHERE deleted_at IS NULL AND role = 'USER'"),
+    ("raw_flight_bookings", "chat_session_id"), ("raw_flight_bookings", "user_id"),
+    ("raw_flight_searches", "chat_session_id"), ("raw_flight_searches", "user_id"), ("raw_flight_searches", "created_at"),
+    ("raw_hotel_searches", "chat_session_id"), ("raw_hotel_searches", "user_id"), ("raw_hotel_searches", "created_at"),
+    ("raw_flight_search_results", "search_request_id"), ("raw_hotel_search_results", "search_request_id"),
+    ("raw_intents", "chat_session_id"), ("raw_flow_state", "chat_session_id"), ("raw_feedback", "chat_session_id"),
+    ("raw_llm_calls", "chat_session_id"), ("raw_llm_calls", "created_at"),
+    ("raw_analytics_events", "chat_session_id"), ("raw_analytics_events", "user_id, event_at"),
+]
+DERIVED_INDEXES = [
+    ("session_facts", "session_id"), ("session_facts", "user_id"), ("session_facts", "created_at"),
+    ("booking_ops", "chat_session_id"), ("booking_ops", "user_id"), ("booking_ops", "created_at"),
+]

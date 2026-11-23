@@ -15,7 +15,9 @@ def _csv(name: str) -> list[str]:
 @dataclass(frozen=True)
 class Settings:
     source_database_url: str = os.getenv("SOURCE_DATABASE_URL", "")
-    analytics_db_path: Path = PROJECT_ROOT / os.getenv("ANALYTICS_DB_PATH", "data/analytics.duckdb")
+    # Bookr Analyst's own Postgres database (Neon): the masked analytics copy and the Friction Finder store.
+    # Never the same database as SOURCE_DATABASE_URL.
+    analyst_database_url: str = os.getenv("ANALYST_DATABASE_URL", "").strip()
     internal_user_ids: tuple[str, ...] = tuple(_csv("INTERNAL_USER_IDS"))
     internal_email_domains: tuple[str, ...] = tuple(d.lower() for d in _csv("INTERNAL_EMAIL_DOMAINS"))
     tz_offset_minutes: int = int(os.getenv("TZ_OFFSET_MINUTES", "330"))
@@ -30,7 +32,6 @@ class Settings:
         fmt = "%Y-%m-%d %H:%M" if " " in self.sync_since else "%Y-%m-%d"
         return datetime.strptime(self.sync_since, fmt) - timedelta(minutes=self.tz_offset_minutes)
     # Friction Finder
-    friction_db_path: Path = PROJECT_ROOT / os.getenv("FRICTION_DB_PATH", "data/friction.sqlite")
     friction_config_path: Path = PROJECT_ROOT / "config" / "friction.json"
     exports_dir: Path = PROJECT_ROOT / "data" / "exports"
     # "HH:MM" in IST: while the server runs, sync + analyse yesterday's chats daily at this time. Empty = off.

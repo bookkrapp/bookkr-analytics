@@ -2,6 +2,7 @@
 
 Run (dev):  uvicorn bookr_analyst.api:app --reload --port 8000
 Serves the built React app from ../frontend/dist when it exists.
+Data lives in Postgres (ANALYST_DATABASE_URL), see db.py.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import PROJECT_ROOT, settings
-from .db import connect, db_lock, one, rows
+from .db import connect, is_synced, one, rows
 
 app = FastAPI(title="Bookr Analyst")
 OFF = int(settings.tz_offset_minutes)
@@ -48,7 +49,8 @@ if settings.basic_auth_password:
 
 # Filters --------------------------------------------------------------------
 
-NOT_INTERNAL = "NOT coalesce((SELECT u.is_internal FROM users u WHERE u.user_id = {alias}.user_id), false)"
+# NOT EXISTS (not a scalar subquery) so Postgres can run it as one hash anti-join instead of a lookup per row
+NOT_INTERNAL = "NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = {alias}.user_id AND u.is_internal)"
 
 
 def _internal(alias: str, exclude: bool) -> str:
@@ -89,7 +91,7 @@ def meta():
 def _run_sync_bg():
     from .sync import run_sync
     try:
-        _sync_state["last_result"] = run_sync(swap_lock=db_lock)
+        _sync_state["last_result"] = run_sync()
         _sync_state["last_error"] = None
     except Exception as e:  # surfaced in /api/meta
         _sync_state["last_error"] = f"{type(e).__name__}: {e}"
@@ -151,13 +153,14 @@ def overview(days: int = 30, exclude_internal: bool = True):
         daily = rows(con, f"""
             WITH days AS (
                 SELECT CAST(r AS DATE) AS d
-                FROM range(date_trunc('day', CAST($s AS TIMESTAMP) + INTERVAL {OFF} MINUTE),
-                           CAST($e AS TIMESTAMP) + INTERVAL {OFF} MINUTE, INTERVAL 1 DAY) t(r)),
+                FROM generate_series(date_trunc('day', CAST($s AS TIMESTAMP) + INTERVAL '{OFF} minutes'),
+                                     CAST($e AS TIMESTAMP) + INTERVAL '{OFF} minutes', INTERVAL '1 day') t(r)
+                WHERE r < CAST($e AS TIMESTAMP) + INTERVAL '{OFF} minutes'),
             s AS (SELECT CAST(created_local AS DATE) d, count(*) n FROM session_facts
                   WHERE created_at >= $s AND created_at < $e AND (NOT $x OR NOT is_internal) GROUP BY 1),
-            fs AS (SELECT CAST(created_at + INTERVAL {OFF} MINUTE AS DATE) d, count(*) n FROM raw_flight_searches f
+            fs AS (SELECT CAST(created_at + INTERVAL '{OFF} minutes' AS DATE) d, count(*) n FROM raw_flight_searches f
                    WHERE created_at >= $s AND created_at < $e AND {_internal('f', x)} GROUP BY 1),
-            hs AS (SELECT CAST(created_at + INTERVAL {OFF} MINUTE AS DATE) d, count(*) n FROM raw_hotel_searches h
+            hs AS (SELECT CAST(created_at + INTERVAL '{OFF} minutes' AS DATE) d, count(*) n FROM raw_hotel_searches h
                    WHERE created_at >= $s AND created_at < $e AND {_internal('h', x)} GROUP BY 1),
             b AS (SELECT CAST(created_local AS DATE) d, count(*) attempts,
                          count(*) FILTER (WHERE status = 'BOOKED') booked,
@@ -175,7 +178,7 @@ def overview(days: int = 30, exclude_internal: bool = True):
             GROUP BY 1 ORDER BY 2 DESC LIMIT 8""", {"s": w["start"], "e": w["end"]})
         hotels = rows(con, f"""
             SELECT trim(split_part(destination_name, ',', 1)) AS destination, count(*) AS searches,
-                   round(avg(date_diff('day', check_in_date, check_out_date)), 1) AS avg_nights,
+                   round(avg(CAST(check_out_date AS DATE) - CAST(check_in_date AS DATE)), 1) AS avg_nights,
                    round(avg(adults), 1) AS avg_adults
             FROM raw_hotel_searches h WHERE created_at >= $s AND created_at < $e AND {_internal('h', x)}
             GROUP BY 1 ORDER BY 2 DESC LIMIT 8""", {"s": w["start"], "e": w["end"]})
@@ -225,8 +228,9 @@ def funnel(days: int = 30, exclude_internal: bool = True, flow: str | None = Non
             {base} GROUP BY 1 ORDER BY 1""", p)
         ux = one(con, f"""
             SELECT round(avg(n_user_msgs), 1) AS avg_user_msgs_per_session,
-                   median(user_msgs_before_search) FILTER (WHERE first_search_at IS NOT NULL) AS median_user_msgs_to_search,
-                   round(median(minutes_to_first_search) FILTER (WHERE minutes_to_first_search >= 0), 1) AS median_minutes_to_search,
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY user_msgs_before_search) FILTER (WHERE first_search_at IS NOT NULL) AS median_user_msgs_to_search,
+                   round(CAST(percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes_to_first_search)
+                              FILTER (WHERE minutes_to_first_search >= 0) AS NUMERIC), 1) AS median_minutes_to_search,
                    round(100.0 * count(*) FILTER (WHERE current_flow = 'unresolved') / nullif(count(*), 0), 1) AS pct_unresolved_flow,
                    round(100.0 * count(*) FILTER (WHERE n_user_msgs > 0 AND stage_level <= 3) / nullif(count(*), 0), 1) AS pct_no_search,
                    count(*) FILTER (WHERE n_failure_msgs > 0) AS sessions_with_failures
@@ -335,19 +339,19 @@ def session_detail(session_id: str):
                     json_cols=("card_data", "card_shape", "meta_rest"))
         intents = rows(con, f"""
             SELECT id, message_id, intent_type, confidence, parameters, created_at,
-                   created_at + INTERVAL {OFF} MINUTE AS created_local
+                   created_at + INTERVAL '{OFF} minutes' AS created_local
             FROM raw_intents WHERE chat_session_id = $id AND deleted_at IS NULL ORDER BY created_at""", p,
                        json_cols=("parameters",))
         flights = rows(con, f"""
             SELECT f.id, f.origin, f.destination, f.departure_date, f.return_date, f.adults, f.children,
                    f.infants, f.cabin_class, f.is_round_trip, f.search_hash, f.created_at,
-                   f.created_at + INTERVAL {OFF} MINUTE AS created_local,
+                   f.created_at + INTERVAL '{OFF} minutes' AS created_local,
                    (SELECT count(*) FROM raw_flight_search_results r WHERE r.search_request_id = f.id) AS result_sets,
                    (SELECT coalesce(sum(option_count), 0) FROM raw_flight_search_results r WHERE r.search_request_id = f.id) AS options
             FROM raw_flight_searches f WHERE chat_session_id = $id ORDER BY created_at""", p)
         hotels = rows(con, f"""
             SELECT h.id, h.destination_name, h.check_in_date, h.check_out_date, h.adults, h.children, h.filters,
-                   h.created_at, h.created_at + INTERVAL {OFF} MINUTE AS created_local,
+                   h.created_at, h.created_at + INTERVAL '{OFF} minutes' AS created_local,
                    (SELECT max(hotel_count) FROM raw_hotel_search_results r WHERE r.search_request_id = h.id) AS hotels
             FROM raw_hotel_searches h WHERE chat_session_id = $id ORDER BY created_at""", p, json_cols=("filters",))
         bookings = rows(con, """
@@ -356,7 +360,7 @@ def session_detail(session_id: str):
                    confirmation_email_sent_at, created_at, created_local
             FROM booking_ops WHERE chat_session_id = $id ORDER BY created_at""", p)
         llm = rows(con, """
-            SELECT task, count(*) AS calls, round(sum(cost_usd), 4) AS cost_usd, round(avg(latency_ms)) AS avg_latency_ms,
+            SELECT task, count(*) AS calls, round(CAST(sum(cost_usd) AS NUMERIC), 4) AS cost_usd, round(avg(latency_ms)) AS avg_latency_ms,
                    count(*) FILTER (WHERE NOT success) AS failures
             FROM raw_llm_calls WHERE chat_session_id = $id GROUP BY 1 ORDER BY 2 DESC""", p)
 
@@ -413,7 +417,7 @@ def users_report(days: int = 30, exclude_internal: bool = True):
         A = ACT.format(internal=_internal("m", x))
         p = {"sd": sd, "ed": ed}
         extra = one(con, A + """
-            , gaps AS (SELECT user_id, d, date_diff('day', lag(d) OVER (PARTITION BY user_id ORDER BY d), d) AS gap FROM act),
+            , gaps AS (SELECT user_id, d, d - lag(d) OVER (PARTITION BY user_id ORDER BY d) AS gap FROM act),
             ret AS (SELECT f.user_id, f.first_day,
                            bool_or(a.d > f.first_day AND a.d <= f.first_day + 7) AS r7,
                            bool_or(a.d > f.first_day AND a.d <= f.first_day + 30) AS r30,
@@ -427,7 +431,8 @@ def users_report(days: int = 30, exclude_internal: bool = True):
                      AND (NOT $x OR NOT is_internal) GROUP BY 1)
             SELECT
               (SELECT round(avg(sessions), 2) FROM sess) AS avg_sessions_per_user,
-              (SELECT median(gap) FROM gaps WHERE gap IS NOT NULL AND d >= $sd AND d < $ed) AS median_days_between_visits,
+              (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY gap) FROM gaps
+                 WHERE gap IS NOT NULL AND d >= $sd AND d < $ed) AS median_days_between_visits,
               (SELECT round(100.0 * count(*) FILTER (WHERE r7) / nullif(count(*), 0), 1) FROM ret, maxd
                  WHERE first_day <= md - 7) AS returned_7d_pct,
               (SELECT count(*) FROM ret, maxd WHERE first_day <= md - 7) AS returned_7d_base,
@@ -439,7 +444,9 @@ def users_report(days: int = 30, exclude_internal: bool = True):
               (SELECT count(*) FROM bk WHERE bookings >= 2) AS repeat_bookers
         """, {**p, "x": x})
         daily = rows(con, A + """
-            , days AS (SELECT CAST(r AS DATE) AS d FROM range(CAST($sd AS DATE), CAST($ed AS DATE), INTERVAL 1 DAY) t(r))
+            , days AS (SELECT CAST(r AS DATE) AS d
+                      FROM generate_series(CAST($sd AS TIMESTAMP), CAST($ed AS TIMESTAMP) - INTERVAL '1 day',
+                                           INTERVAL '1 day') t(r))
             SELECT days.d AS date,
                    count(a.user_id) FILTER (WHERE f.first_day = a.d) AS new_users,
                    count(a.user_id) FILTER (WHERE f.first_day < a.d) AS returning_users
@@ -452,8 +459,9 @@ def users_report(days: int = 30, exclude_internal: bool = True):
                    min(n) AS ord, count(*) AS users
             FROM win GROUP BY 1 ORDER BY 2""", p)
         cohorts = rows(con, A + """
-            , c AS (SELECT f.user_id, CAST(date_trunc('week', f.first_day) AS DATE) AS cohort,
-                           date_diff('week', date_trunc('week', f.first_day), date_trunc('week', a.d)) AS wk
+            , c AS (SELECT f.user_id, CAST(date_trunc('week', CAST(f.first_day AS TIMESTAMP)) AS DATE) AS cohort,
+                           (CAST(date_trunc('week', CAST(a.d AS TIMESTAMP)) AS DATE)
+                            - CAST(date_trunc('week', CAST(f.first_day AS TIMESTAMP)) AS DATE)) / 7 AS wk
                     FROM firsts f JOIN act a USING (user_id))
             SELECT cohort, wk, count(DISTINCT user_id) AS users FROM c WHERE wk <= 7
             GROUP BY 1, 2 ORDER BY 1 DESC, 2""")
@@ -503,10 +511,13 @@ app.include_router(friction_router)
 @app.on_event("startup")
 def _schedule():
     from .sync import run_sync
-    start_daily_scheduler(lambda: run_sync(swap_lock=db_lock))
-    # Fresh deployment (empty data disk): pull the first copy in the background instead of showing an empty app.
-    if settings.source_database_url and not settings.analytics_db_path.exists():
-        trigger_sync()
+    start_daily_scheduler(run_sync)
+    # Empty database: pull the first copy in the background instead of showing an empty app.
+    try:
+        if settings.source_database_url and not is_synced():
+            trigger_sync()
+    except Exception:  # database unreachable or not configured: the app still starts and /api/meta reports it
+        traceback.print_exc()
 
 
 # Static frontend ------------------------------------------------------------

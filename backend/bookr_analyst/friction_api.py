@@ -8,7 +8,7 @@ import traceback
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from .config import settings
@@ -19,7 +19,7 @@ from .friction import issues as IS
 from .friction import taxonomy as TX
 from .friction.export import GROUPS, build_example, dataset_items, finetune_candidates, write_export
 from .friction.signals import config as fconfig
-from .friction.store import all_dicts, as_dict, conn, now_iso
+from .friction.store import all_dicts, as_dict, conn, load_export_file, now_iso
 
 router = APIRouter(prefix="/api/friction")
 OFF = int(settings.tz_offset_minutes)
@@ -48,7 +48,7 @@ def status():
             "SELECT * FROM runs WHERE id IN (SELECT max(id) FROM runs GROUP BY day)")}
         rev = {r["day"]: dict(r) for r in c.execute("""
             SELECT f.day, count(DISTINCT f.id) AS findings, count(i.id) AS items,
-                   sum(i.verdict = 'pending') AS pending, sum(i.verdict = 'agree') AS agreed
+                   sum((i.verdict = 'pending')::int) AS pending, sum((i.verdict = 'agree')::int) AS agreed
             FROM findings f LEFT JOIN items i ON i.finding_id = f.id GROUP BY f.day""")}
         latest = as_dict(c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone())
     for d in days:
@@ -102,11 +102,11 @@ FINDING_LIST = """
     SELECT f.id, f.day, f.session_id, f.user_id, f.title, f.flow, f.session_started_local, f.n_user_msgs, f.outcome,
            f.score, f.source, f.summary, f.submitted_at, f.submitted_by,
            count(i.id) AS n_items,
-           sum(i.verdict = 'pending') AS n_pending, sum(i.verdict = 'agree') AS n_agree,
-           sum(i.verdict = 'not_friction') AS n_not_friction, sum(i.verdict = 'skip') AS n_skip,
-           group_concat(DISTINCT i.type) AS types,
-           group_concat(DISTINCT i.bucket) AS buckets,
-           group_concat(DISTINCT i.fix_lane) AS lanes,
+           sum((i.verdict = 'pending')::int) AS n_pending, sum((i.verdict = 'agree')::int) AS n_agree,
+           sum((i.verdict = 'not_friction')::int) AS n_not_friction, sum((i.verdict = 'skip')::int) AS n_skip,
+           string_agg(DISTINCT i.type, ',') AS types,
+           string_agg(DISTINCT i.bucket, ',') AS buckets,
+           string_agg(DISTINCT i.fix_lane, ',') AS lanes,
            max(CASE i.severity WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END) AS sev_rank
     FROM findings f LEFT JOIN items i ON i.finding_id = f.id
 """
@@ -128,11 +128,12 @@ def findings(day: str | None = None, status: str | None = None, type: str | None
     if lane:
         where.append("EXISTS (SELECT 1 FROM items x WHERE x.finding_id = f.id AND x.fix_lane = ?)")
         p.append(lane)
-    having = {"pending": "HAVING n_pending > 0", "reviewed": "HAVING n_pending = 0 AND f.submitted_at IS NULL",
-              "submitted": "HAVING f.submitted_at IS NOT NULL", "agreed": "HAVING n_agree > 0"}.get(status or "", "")
+    n_pending, n_agree = "sum((i.verdict = 'pending')::int)", "sum((i.verdict = 'agree')::int)"
+    having = {"pending": f"HAVING {n_pending} > 0", "reviewed": f"HAVING {n_pending} = 0 AND f.submitted_at IS NULL",
+              "submitted": "HAVING f.submitted_at IS NOT NULL", "agreed": f"HAVING {n_agree} > 0"}.get(status or "", "")
     with conn() as c:
         out = [dict(r) for r in c.execute(
-            f"{FINDING_LIST} WHERE {' AND '.join(where)} GROUP BY f.id {having} ORDER BY sev_rank DESC, f.score DESC, f.id",
+            f"{FINDING_LIST} WHERE {' AND '.join(where)} GROUP BY f.id {having} ORDER BY sev_rank DESC NULLS LAST, f.score DESC NULLS LAST, f.id",
             p).fetchall()]
     sev = {3: "high", 2: "medium", 1: "low"}
     for r in out:
@@ -156,7 +157,7 @@ def finding(fid: int):
         queue = [r[0] for r in c.execute("""
             SELECT f.id FROM findings f WHERE f.day = ? AND f.submitted_at IS NULL
               AND EXISTS (SELECT 1 FROM items i WHERE i.finding_id = f.id AND i.verdict = 'pending')
-            ORDER BY f.score DESC, f.id""", (f["day"],))]
+            ORDER BY f.score DESC NULLS LAST, f.id""", (f["day"],))]
     f["next_pending_id"] = next((x for x in queue if x != fid), None)
     f["pending_in_day"] = len(queue)
     return f
@@ -233,23 +234,23 @@ def summary(day: str | None = None):
     with conn() as c:
         by_type = [dict(r) for r in c.execute(f"""
             SELECT i.type, count(*) AS items, count(DISTINCT i.finding_id) AS chats,
-                   sum(i.verdict = 'agree') AS agreed, sum(i.verdict = 'not_friction') AS not_friction,
-                   sum(i.verdict = 'pending') AS pending
+                   sum((i.verdict = 'agree')::int) AS agreed, sum((i.verdict = 'not_friction')::int) AS not_friction,
+                   sum((i.verdict = 'pending')::int) AS pending
             FROM items i JOIN findings f ON f.id = i.finding_id {where} GROUP BY 1 ORDER BY 2 DESC""", p)]
         for r in by_type:
             r["bucket"] = TX.TYPES.get(r["type"], (None, ""))[0]
         by_bucket = {r["bucket"]: dict(r) for r in c.execute(f"""
             SELECT i.bucket, count(*) AS items, count(DISTINCT i.finding_id) AS chats,
-                   sum(i.verdict = 'agree') AS agreed, sum(i.verdict = 'not_friction') AS not_friction,
-                   sum(i.verdict = 'pending') AS pending
+                   sum((i.verdict = 'agree')::int) AS agreed, sum((i.verdict = 'not_friction')::int) AS not_friction,
+                   sum((i.verdict = 'pending')::int) AS pending
             FROM items i JOIN findings f ON f.id = i.finding_id {where} GROUP BY 1""", p)}
         by_lane = [dict(r) for r in c.execute(f"""
-            SELECT i.fix_lane, count(*) AS items, sum(i.verdict = 'agree') AS agreed
+            SELECT i.fix_lane, count(*) AS items, sum((i.verdict = 'agree')::int) AS agreed
             FROM items i JOIN findings f ON f.id = i.finding_id {where} GROUP BY 1 ORDER BY 2 DESC""", p)]
         totals = dict(c.execute(f"""
             SELECT count(DISTINCT f.id) AS findings, count(i.id) AS items,
-                   coalesce(sum(i.verdict = 'pending'), 0) AS pending, coalesce(sum(i.verdict = 'agree'), 0) AS agreed,
-                   coalesce(sum(i.verdict = 'not_friction'), 0) AS not_friction, coalesce(sum(i.verdict = 'skip'), 0) AS skipped,
+                   coalesce(sum((i.verdict = 'pending')::int), 0) AS pending, coalesce(sum((i.verdict = 'agree')::int), 0) AS agreed,
+                   coalesce(sum((i.verdict = 'not_friction')::int), 0) AS not_friction, coalesce(sum((i.verdict = 'skip')::int), 0) AS skipped,
                    count(DISTINCT CASE WHEN f.submitted_at IS NOT NULL THEN f.id END) AS submitted
             FROM findings f LEFT JOIN items i ON i.finding_id = f.id {where}""", p).fetchone())
         run = as_dict(c.execute("SELECT * FROM runs WHERE day = ? ORDER BY id DESC LIMIT 1", (day,)).fetchone()) if day else None
@@ -273,7 +274,7 @@ def dataset():
     with conn() as c:
         exports = [dict(r) for r in c.execute("SELECT * FROM exports ORDER BY id DESC LIMIT 20")]
         by_reviewer = [dict(r) for r in c.execute("""SELECT reviewer, count(*) AS reviewed,
-                         sum(verdict = 'agree') AS agreed FROM items WHERE verdict <> 'pending' GROUP BY 1 ORDER BY 2 DESC""")]
+                         sum((verdict = 'agree')::int) AS agreed FROM items WHERE verdict <> 'pending' GROUP BY 1 ORDER BY 2 DESC""")]
         pending = c.execute("SELECT count(*) FROM items WHERE verdict = 'pending'").fetchone()[0]
     types: dict[str, int] = {}
     for e in examples:
@@ -296,11 +297,11 @@ def _lora_signals(days: int = 30) -> dict:
         with connect() as con:
             r = rows(con, f"""
                 SELECT model, count(*) AS calls, sum((NOT success)::INT) AS failed,
-                       sum((NOT success AND regexp_matches(coalesce(error, ''), 'parse|invalid_enum|schema|JSON', 'i'))::INT)
+                       sum((NOT success AND coalesce(error, '') ~* 'parse|invalid_enum|schema|JSON')::INT)
                          AS structural
                 FROM raw_llm_calls
                 WHERE task IN ('unified_intent_extraction', 'intent_extraction')
-                  AND created_at >= (SELECT max(created_at) FROM raw_llm_calls) - INTERVAL {int(days)} DAY
+                  AND created_at >= (SELECT max(created_at) FROM raw_llm_calls) - INTERVAL '{int(days)} days'
                 GROUP BY 1 ORDER BY 2 DESC""")
     except FileNotFoundError:
         return {"days": days, "models": []}
@@ -316,10 +317,14 @@ def export(body: dict = Body(default={})):
 
 @router.get("/exports/{name}")
 def download(name: str):
+    media_type = "application/jsonl" if name.endswith(".jsonl") else "text/markdown"
     f = (settings.exports_dir / name).resolve()
-    if f.parent != settings.exports_dir.resolve() or not f.is_file():
+    if f.parent == settings.exports_dir.resolve() and f.is_file():
+        return FileResponse(f, filename=name, media_type=media_type)
+    content = load_export_file(name)  # written on another machine: served from the database copy
+    if content is None:
         raise HTTPException(404)
-    return FileResponse(f, filename=name, media_type="application/jsonl" if name.endswith(".jsonl") else "text/markdown")
+    return Response(content, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 # Issue register, priorities, briefs, RAG pack (phase 3c) ---------------------

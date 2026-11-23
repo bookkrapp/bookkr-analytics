@@ -5,15 +5,13 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter            # persistent disks need a paid plan
-    numInstances: 1          # the DuckDB/SQLite files live on one disk; do not scale out
+    plan: starter            # an always-on instance, so the daily Friction Finder schedule can run
+    numInstances: 1          # sync state and the daily scheduler live in-process; do not scale out
     healthCheckPath: /api/health
-    disk:
-      name: bookr-analyst-data
-      mountPath: /app/data   # analytics.duckdb, friction.sqlite, exports/
-      sizeGB: 1
     envVars:
-      - key: SOURCE_DATABASE_URL
+      - key: SOURCE_DATABASE_URL   # Bookkr source database (read-only login)
+        sync: false
+      - key: ANALYST_DATABASE_URL  # Bookr Analyst's own Neon database; same value as your local .env
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false

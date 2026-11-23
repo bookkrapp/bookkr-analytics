@@ -1,4 +1,4 @@
-# Bookr Analyst (local)
+# Bookr Analyst
 
 Internal analytics platform for Bookkr.
 - **Dashboards:** Overview, Funnel, Booking & payment ops, Users & retention, Conversations (explorer). Every KPI has an ⓘ button that explains it.
@@ -13,8 +13,16 @@ Plan docs: [PLATFORM_PLAN.md](PLATFORM_PLAN.md) · [DATA_DICTIONARY.md](DATA_DIC
 ```powershell
 .\start.ps1
 ```
-Then open **http://localhost:8000**. The first run creates the Python env, builds the UI and syncs data.
-Use the **Refresh data** button (top right) to re-sync from Neon. A sync takes about 6 seconds on test data.
+Then open **http://localhost:8000**. The first run creates the Python env and builds the UI; if the database has never been synced, the server starts a sync.
+Use the **Refresh data** button (top right) to re-sync from the source database.
+
+`.env` needs two connection strings (see `.env.example`):
+- `SOURCE_DATABASE_URL`: the Bookkr database, read with a read-only login.
+- `ANALYST_DATABASE_URL`: Bookr Analyst's **own** Neon database. Everything the app stores lives here, so a laptop and the deployed app that use the same value see the same data, reviews and exports. It must not be the source database.
+
+### Deploy (Render)
+`render.yaml` deploys one Docker web service (`Dockerfile` builds the UI and serves it from the API). Set the same `ANALYST_DATABASE_URL` there. The container keeps no state, so no disk is needed. Set `BASIC_AUTH_PASSWORD` to put the site behind a login.
+Set `FRICTION_DAILY_AT` in **one** place only (normally Render): two servers with the schedule on would both run the daily analysis.
 
 Development mode (hot reload):
 ```powershell
@@ -31,7 +39,7 @@ Sync from the command line: `cd backend; .\.venv\Scripts\python.exe -m bookr_ana
 Neon (source)  ──read-only, one REPEATABLE READ snapshot──►  sync.py
                                                                  │  drop PII columns, regex-mask text & JSON
                                                                  ▼
-                                               data/analytics.duckdb  (raw_* tables)
+                                  Postgres, schema `analyst`  (raw_* tables)
                                                                  │  transform.py
                                                                  ▼
                               users · messages · session_facts · booking_ops · stages
@@ -42,6 +50,7 @@ Neon (source)  ──read-only, one REPEATABLE READ snapshot──►  sync.py
 | Piece | File |
 |---|---|
 | Settings (.env) | `backend/bookr_analyst/config.py` |
+| Postgres access (pool, schemas) | `backend/bookr_analyst/db.py` |
 | PII masking | `backend/bookr_analyst/masking.py` |
 | Extract + swap-in | `backend/bookr_analyst/sync.py` |
 | Derived tables & metric definitions | `backend/bookr_analyst/transform.py` |
@@ -52,7 +61,8 @@ Neon (source)  ──read-only, one REPEATABLE READ snapshot──►  sync.py
 - The sync opens the source connection with `read_only = True` and a `statement_timeout`, so it cannot write. **Still, `.env` currently uses the `neondb_owner` login.** Create the read-only role in [sql/create_readonly_role.sql](sql/create_readonly_role.sql) and swap the connection string. Also reset the owner password, because it was shared in chat.
 - These are **never copied**: emails, phones, names, DOB, password hashes, guest secrets, GST info, traveller details, booking request/response JSON, PNRs (only a "has PNR" flag), and user location.
 - Message text, titles, intent JSON and failure reasons are regex-masked (emails → `[email]`, phones → `[phone]`, long numbers, passport-like IDs). **Personal names inside free text are not masked yet.** That needs NER/LLM masking, planned with the Friction Finder.
-- `.env` and `data/` are git-ignored.
+- `.env` and `data/` (local export files) are git-ignored.
+- The sync writes a fresh copy into a build schema in one transaction and swaps it in for `analyst` on commit. The `friction` schema (findings, reviews, exports) is never touched by a sync.
 
 ### Metric definitions (in `transform.py`)
 - **Funnel stage** = furthest stage a chat session reached: Chat created → User engaged (≥1 user message) → Intent captured (intent-confirmation card, flow state `intent_ready`, or a multi-city phase) → Search run (flight or hotel search row) → Results shown (flight/hotel results card or panel) → Booking attempted → Booked (`FlightBooking.status = BOOKED`).
@@ -67,7 +77,7 @@ Put internal user IDs or email domains in `.env` (`INTERNAL_USER_IDS`, `INTERNAL
 
 ```
 one day of chats ──► rule signals (score) ──► LLM judge (Claude, optional) ──► findings ──► human review ──► RAG file
- (masked, from DuckDB)  friction/signals.py      friction/judge.py            data/friction.sqlite   /friction/:id   data/exports/
+ (masked, schema analyst) friction/signals.py    friction/judge.py            schema friction        /friction/:id   data/exports/ + DB
 ```
 
 - **Run it:** in the app, go to Friction Finder → pick a day → **Run analysis**. Or from the command line:
@@ -78,12 +88,16 @@ one day of chats ──► rule signals (score) ──► LLM judge (Claude, opt
 - **LLM judge on a Claude subscription (no API key):** install Claude Code, run `claude` once and log in with your Pro/Max account, then restart the server. The judge calls `claude -p` in an empty temp folder with tools disabled, so usage counts against your plan's limits rather than a per-token bill. With `FRICTION_LLM_PROVIDER=auto` this is used whenever there's no API key; set `CLAUDE_CLI_PATH` if `claude` isn't on PATH.
 - **LLM judge on an API key:** set `ANTHROPIC_API_KEY` in `.env` and restart. Chats with a rule score ≥ 1 are sent to `claude-sonnet-5-5` (switch to `claude-opus-5-5` in `config/friction.json` if precision is low) (structured JSON output, server-side refusal fallback enabled), which writes for each item: the turns, the quote, what went wrong, the correct interpretation (travel_intent JSON) and a guidance rule. Items reviewers mark **Not friction** are fed back into the prompt as known false positives. Without a key, it runs rules-only.
 - **Review:** each item gets **Agree** (goes into the dataset), **Not friction** (teaches the judge), or **Skip**. Reviewers can edit the interpretation and guidance. Re-running a day never touches chats that have already been reviewed.
-- **Export:** Dataset & export → **Generate file** writes `data/exports/bookkr_friction_rag_<time>.jsonl` (one example per line: context, user_message, what_went_wrong, expected_interpretation, guidance, source) and a `.md` with the rules plus readable examples.
+- **Export:** Dataset & export → **Generate file** writes `data/exports/bookkr_friction_rag_<time>.jsonl` (also stored in the database, so it can be downloaded from any machine) (one example per line: context, user_message, what_went_wrong, expected_interpretation, guidance, source) and a `.md` with the rules plus readable examples.
 - **Tuning:** weights, thresholds, regexes and the model are in `config/friction.json`, picked up on the next run.
+
+## Moving an old local store to Postgres
+Earlier versions kept data in local files (`data/analytics.duckdb`, `data/friction.sqlite`). The analytics copy is rebuilt by a sync. To carry over findings, reviews and export files:
+`cd backend; python scripts/migrate_sqlite_to_postgres.py` (reads `data/friction.sqlite`, never changes it; refuses to overwrite a non-empty store unless `--replace` is given).
 
 ## Moving to production data
 1. Create `bookr_analyst_ro` on production (ideally on a read replica) with `sql/create_readonly_role.sql`.
 2. Set `SOURCE_DATABASE_URL` to it, configure the internal users (`INTERNAL_USER_IDS`), and refresh.
-3. **Clear the test-data review queue:** `cd backend; .\.venv\Scripts\python.exe -m bookr_analyst.friction --reset`. This archives `data/friction.sqlite` so test findings don't end up in the production dataset.
+3. **Clear the test-data review queue:** `cd backend; .\.venv\Scripts\python.exe -m bookr_analyst.friction --reset`. This renames the `friction` schema to `friction_archived_<time>` so test findings don't end up in the production dataset. It affects every machine using the database.
 4. Set `ANTHROPIC_API_KEY` for the LLM judge (optional but recommended), then run the Friction Finder on the first production day.
 5. At production volume, switch the sync from full refresh to incremental (by `updatedAt`). It is a full copy today.

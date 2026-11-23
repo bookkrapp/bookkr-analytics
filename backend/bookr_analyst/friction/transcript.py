@@ -86,16 +86,6 @@ def _short_model(m: str | None) -> str:
     return m.split("/")[-1][:40]
 
 
-def _optional(con, sql: str, params: dict, json_cols=()) -> list[dict]:
-    """A query on a table older synced databases may not have yet."""
-    try:
-        return rows(con, sql, params, json_cols=json_cols)
-    except Exception as e:  # duckdb CatalogException before the first re-sync
-        if "raw_analytics_events" in str(e):
-            return []
-        raise
-
-
 def analytics_text(e: dict) -> str | None:
     """One transcript line per analytics event that matters for friction (None = keep it out of the transcript)."""
     p = e.get("properties") if isinstance(e.get("properties"), dict) else {}
@@ -139,13 +129,13 @@ def load_day(day: date, exclude_internal: bool = True, session_ids: list[str] | 
         p = {"ids": ids}
         facts = rows(con, """SELECT sf.*, st.name AS stage FROM session_facts sf
                              JOIN stages st ON st.level = sf.stage_level
-                             WHERE list_contains($ids, session_id)""", p)
+                             WHERE session_id = ANY($ids)""", p)
         msgs = rows(con, """SELECT id, chat_session_id, role, content, kind, card_type, card_data, card_shape,
                                    created_at, created_local
-                            FROM messages WHERE list_contains($ids, chat_session_id) ORDER BY created_at""", p,
+                            FROM messages WHERE chat_session_id = ANY($ids) ORDER BY created_at""", p,
                     json_cols=("card_data", "card_shape"))
         intents = rows(con, """SELECT chat_session_id, message_id, intent_type, confidence, parameters, created_at
-                               FROM raw_intents WHERE deleted_at IS NULL AND list_contains($ids, chat_session_id)
+                               FROM raw_intents WHERE deleted_at IS NULL AND chat_session_id = ANY($ids)
                                ORDER BY created_at""", p, json_cols=("parameters",))
         flights = rows(con, """SELECT f.chat_session_id, f.origin, f.destination, f.departure_date, f.return_date,
                                       f.adults, f.children, f.infants, f.cabin_class, f.search_hash, f.created_at,
@@ -153,25 +143,25 @@ def load_day(day: date, exclude_internal: bool = True, session_ids: list[str] | 
                                         WHERE r.search_request_id = f.id) AS options,
                                       (SELECT count(*) FROM raw_flight_search_results r
                                         WHERE r.search_request_id = f.id) AS result_sets
-                               FROM raw_flight_searches f WHERE list_contains($ids, chat_session_id)
+                               FROM raw_flight_searches f WHERE chat_session_id = ANY($ids)
                                ORDER BY created_at""", p)
         hotels = rows(con, """SELECT h.chat_session_id, h.destination_name, h.check_in_date, h.check_out_date,
                                      h.adults, h.created_at,
                                      (SELECT max(hotel_count) FROM raw_hotel_search_results r
                                        WHERE r.search_request_id = h.id) AS hotels
-                              FROM raw_hotel_searches h WHERE list_contains($ids, chat_session_id)
+                              FROM raw_hotel_searches h WHERE chat_session_id = ANY($ids)
                               ORDER BY created_at""", p)
         feedback = rows(con, """SELECT chat_session_id, message_id, is_positive, comment, created_at
-                                FROM raw_feedback WHERE list_contains($ids, chat_session_id)""", p)
+                                FROM raw_feedback WHERE chat_session_id = ANY($ids)""", p)
         llm_fail = rows(con, """SELECT chat_session_id, task, count(*) AS n FROM raw_llm_calls
-                                WHERE NOT success AND list_contains($ids, chat_session_id) GROUP BY 1, 2""", p)
+                                WHERE NOT success AND chat_session_id = ANY($ids) GROUP BY 1, 2""", p)
         llm_calls = rows(con, """SELECT chat_session_id, task, model, success, error, latency_ms, created_at
-                                 FROM raw_llm_calls WHERE list_contains($ids, chat_session_id) ORDER BY created_at""", p)
+                                 FROM raw_llm_calls WHERE chat_session_id = ANY($ids) ORDER BY created_at""", p)
         # events and bookings that carry no chat id are matched by user and the chat's time window
-        window = """WITH w AS (SELECT chat_session_id, any_value(user_id) FILTER (WHERE role = 'USER') AS user_id,
-                                      min(created_at) - INTERVAL 5 MINUTE AS t0, max(created_at) + INTERVAL 60 MINUTE AS t1
-                               FROM messages WHERE list_contains($ids, chat_session_id) GROUP BY 1)"""
-        analytics = _optional(con, f"""{window}
+        window = """WITH w AS (SELECT chat_session_id, min(user_id) FILTER (WHERE role = 'USER') AS user_id,
+                                      min(created_at) - INTERVAL '5 minutes' AS t0, max(created_at) + INTERVAL '60 minutes' AS t1
+                               FROM messages WHERE chat_session_id = ANY($ids) GROUP BY 1)"""
+        analytics = rows(con, f"""{window}
             SELECT w.chat_session_id AS sid, e.event_name, e.event_at AS created_at, e.platform, e.app_version,
                    e.properties
             FROM raw_analytics_events e JOIN w

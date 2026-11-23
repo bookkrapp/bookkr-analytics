@@ -1,27 +1,143 @@
+"""Postgres access (Neon). One database, two schemas:
+
+* ``analyst``  : the masked analytics copy, rebuilt and swapped in by every sync (sync.py)
+* ``friction`` : Friction Finder runs, findings and human reviews (friction/store.py); never touched by a sync
+
+Every machine that sets the same ANALYST_DATABASE_URL (a laptop, the Render service) sees the same data.
+"""
+from __future__ import annotations
+
 import json
+import re
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
 
-import duckdb
+import psycopg
+from psycopg.adapt import Loader
+from psycopg_pool import ConnectionPool
 
 from .config import settings
 
-# Held while a request reads the DB and while sync swaps the file in.
-db_lock = threading.RLock()
+ANALYTICS_SCHEMA = "analyst"
+FRICTION_SCHEMA = "friction"
+
+
+class _NumberLoader(Loader):
+    """numeric -> int when it is a whole number (sum of ints), else float. Never Decimal."""
+
+    def load(self, data):
+        s = bytes(data).decode()
+        return int(s) if s.lstrip("-").isdigit() else float(s)
+
+
+class _TextLoader(Loader):
+    """json -> the raw text. Callers parse the columns they need (see rows(json_cols=...))."""
+
+    def load(self, data):
+        return bytes(data).decode()
+
+
+def configure(pg: psycopg.Connection) -> None:
+    pg.adapters.register_loader("numeric", _NumberLoader)
+    pg.adapters.register_loader("json", _TextLoader)
+    pg.adapters.register_loader("jsonb", _TextLoader)
+
+
+def database_url() -> str:
+    if not settings.analyst_database_url:
+        raise RuntimeError("ANALYST_DATABASE_URL is not set. Point it at the Neon database that stores "
+                           "Bookr Analyst's own data (see .env.example).")
+    return settings.analyst_database_url
+
+
+def open_connection() -> psycopg.Connection:
+    """A dedicated connection (used by the sync, which runs one long transaction)."""
+    pg = psycopg.connect(database_url(), cursor_factory=psycopg.ClientCursor)
+    configure(pg)
+    return pg
+
+
+_pool: ConnectionPool | None = None
+_pool_lock = threading.Lock()
+
+
+def _get_pool() -> ConnectionPool:
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            # Parameters are bound client-side (ClientCursor), so nothing is prepared on the server and the
+            # Neon pooled (-pooler) connection string works. Idle connections are dropped before Neon suspends.
+            _pool = ConnectionPool(database_url(), min_size=0, max_size=8, max_idle=120, timeout=30,
+                                   kwargs={"cursor_factory": psycopg.ClientCursor}, configure=configure, open=True)
+        return _pool
+
+
+_NAMED = re.compile(r"\$([A-Za-z_]\w*)")
+
+
+def to_pg(sql: str, params) -> str:
+    """The app writes `$name` (dict params) or `?` (positional params); psycopg wants %(name)s / %s."""
+    sql = sql.replace("%", "%%")
+    return _NAMED.sub(r"%(\1)s", sql) if isinstance(params, dict) else sql.replace("?", "%s")
+
+
+class Con:
+    """Thin wrapper so call sites keep `con.execute(sql, params)` with `$name` or `?` placeholders."""
+
+    def __init__(self, pg: psycopg.Connection, row_factory=None):
+        self.pg = pg
+        self._rf = row_factory
+
+    def _cursor(self):
+        return self.pg.cursor(row_factory=self._rf) if self._rf else self.pg.cursor()
+
+    def execute(self, sql: str, params=None):
+        return self._cursor().execute(to_pg(sql, params), params if params is not None else ())
+
+    def executemany(self, sql: str, seq) -> None:
+        seq = list(seq)
+        if seq:
+            self._cursor().executemany(to_pg(sql, seq[0]), seq)
+
+
+@contextmanager
+def session(schema: str, require_table: str | None = None):
+    """One transaction with `schema` as the search path. Commits on success, rolls back on error.
+
+    The search path is set per transaction (not per connection) so it also holds behind Neon's pooler.
+    """
+    last_error: Exception | None = None
+    for _ in range(3):
+        with _get_pool().connection() as pg:
+            try:
+                found = pg.execute("SELECT set_config('search_path', %s, true), to_regclass(%s)",
+                                   (schema, f"{schema}.{require_table}" if require_table else None)).fetchone()[1]
+            except psycopg.OperationalError as e:  # stale pooled connection (Neon suspended): take a fresh one
+                last_error = e
+                pg.close()
+                continue
+            if require_table and found is None:
+                raise FileNotFoundError("No data synced yet. Run a sync first (python -m bookr_analyst.sync).")
+            yield pg
+            return
+    raise last_error  # type: ignore[misc]
 
 
 @contextmanager
 def connect():
-    with db_lock:
-        if not settings.analytics_db_path.exists():
-            raise FileNotFoundError("Analytics DB not found. Run a sync first (python -m bookr_analyst.sync).")
-        con = duckdb.connect(str(settings.analytics_db_path), read_only=True)
-        try:
-            yield con
-        finally:
-            con.close()
+    """Read the analytics copy. Raises FileNotFoundError until the first sync has run."""
+    with session(ANALYTICS_SCHEMA, "sync_meta") as pg:
+        yield Con(pg)
+
+
+def is_synced() -> bool:
+    try:
+        with connect():
+            return True
+    except FileNotFoundError:
+        return False
 
 
 def _clean(v, json_cols: set[str], name: str):
@@ -38,7 +154,7 @@ def _clean(v, json_cols: set[str], name: str):
 
 
 def rows(con, sql: str, params=None, json_cols: tuple[str, ...] = ()) -> list[dict]:
-    cur = con.execute(sql, params or [])
+    cur = con.execute(sql, params)
     names = [d[0] for d in cur.description]
     jc = set(json_cols)
     return [{n: _clean(v, jc, n) for n, v in zip(names, r)} for r in cur.fetchall()]

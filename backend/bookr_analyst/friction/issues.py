@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 from ..config import settings
 from . import judge as J
 from . import taxonomy as TX
-from .store import all_dicts, as_dict, conn, now_iso
+from .store import all_dicts, as_dict, conn, now_iso, save_export_file
 
 BATCH = 30
 MAX_ATTEMPTS = 3
@@ -119,10 +119,10 @@ def _assign_batch(items: list[dict]) -> int:
             owner = TX.normalize_owner(n.get("owner")) if n.get("owner") in TX.OWNER_KIND else None
             theme = n.get("theme") if n.get("theme") in THEMES else None
             cur = c.execute("""INSERT INTO issues (title, theme, description, bucket, owner, recommended_fix, lesson, created_at, updated_at)
-                               VALUES (?,?,?,?,?,?,?,?,?)""",
+                               VALUES (?,?,?,?,?,?,?,?,?) RETURNING id""",
                             (str(n["title"])[:200], theme, str(n.get("description") or ""), bucket, owner,
                              str(n.get("recommended_fix") or ""), str(n.get("lesson") or ""), now, now))
-            keymap[str(n.get("key"))] = cur.lastrowid
+            keymap[str(n.get("key"))] = cur.fetchone()[0]
         touched = set(keymap.values())
         for a in out.get("assignments") or []:
             if not isinstance(a, dict):
@@ -191,7 +191,7 @@ def assign_pending(max_batches: int | None = None) -> dict:
                     FROM items i JOIN findings f ON f.id = i.finding_id
                     WHERE i.source = 'llm' AND i.issue_id IS NULL AND i.verdict <> 'not_friction'
                       AND i.issue_attempts < {MAX_ATTEMPTS}
-                    ORDER BY i.bucket, i.owner, i.type, i.id LIMIT {BATCH}""").fetchall())
+                    ORDER BY i.bucket NULLS FIRST, i.owner NULLS FIRST, i.type, i.id LIMIT {BATCH}""").fetchall())
                 left = c.execute(f"""SELECT count(*) FROM items WHERE source = 'llm' AND issue_id IS NULL
                                      AND verdict <> 'not_friction' AND issue_attempts < {MAX_ATTEMPTS}""").fetchone()[0]
             if not items:
@@ -303,7 +303,7 @@ ISSUE_STATS = """
     SELECT i.issue_id AS id, count(*) AS items, count(DISTINCT i.session_id) AS chats,
            count(DISTINCT coalesce(f.user_id, i.session_id)) AS users,
            avg(CASE i.severity WHEN 'high' THEN 3 WHEN 'medium' THEN 2 ELSE 1 END) AS sev,
-           sum(i.severity = 'high') AS high,
+           sum((i.severity = 'high')::int) AS high,
            count(DISTINCT CASE WHEN f.outcome = 'Booked' THEN i.session_id END) AS booked_chats,
            min(f.day) AS first_day, max(f.day) AS last_day
     FROM items i JOIN findings f ON f.id = i.finding_id
@@ -533,10 +533,10 @@ def generate_brief(period: str, anchor: date, triggered_by: str = "ui") -> dict:
         content = J.ask_json(_brief_prompt(data))
     with conn() as c:
         cur = c.execute("""INSERT INTO briefs (period, start, "end", created_at, triggered_by, model, content, stats)
-                           VALUES (?,?,?,?,?,?,?,?)""",
+                           VALUES (?,?,?,?,?,?,?,?) RETURNING id""",
                         (period, rep["start"], rep["end"], now_iso(), triggered_by, J.model_name(),
                          json.dumps(content, ensure_ascii=False), json.dumps(data, ensure_ascii=False, default=str)))
-        bid = cur.lastrowid
+        bid = cur.fetchone()[0]
     return latest_brief(period, rep["start"]) or {"id": bid}
 
 
@@ -625,6 +625,8 @@ def write_rag_pack(min_confidence: float = 0.7, per_issue: int = 3) -> dict:
                           f"- What Bookkr did wrong: {e['what_went_wrong']}",
                           f"- Correct interpretation: {exp}", ""]
     md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    for f in (jl, md):
+        save_export_file(f.name, f.read_text(encoding="utf-8"))
     counts = {"examples": len(exs), "issues": sum(len(v) for v in by_prompt.values()), "human_agreed": n_agreed}
     files = [{"group": "intent_rag_pack", "label": "Intent RAG pack", "count": len(exs), "jsonl": jl.name, "md": md.name}]
     with conn() as c:

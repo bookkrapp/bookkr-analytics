@@ -5,7 +5,6 @@ weekly briefs and rebuild the intent RAG pack.
     python scripts/watch_backfill.py 2026-11-13
 """
 import json
-import sqlite3
 import subprocess
 import sys
 import time
@@ -13,7 +12,9 @@ import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from bookr_analyst.friction.store import conn  # noqa: E402
+
 API = "http://127.0.0.1:8000/api/friction"
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -27,11 +28,8 @@ def call(path, body=None):
 
 
 def judged_days():
-    c = sqlite3.connect(ROOT / "data" / "friction.sqlite")
-    try:
+    with conn() as c:
         return {r[0] for r in c.execute("SELECT day FROM runs WHERE mode = 'llm' AND status = 'done'")}
-    finally:
-        c.close()
 
 
 def wait_grouping():

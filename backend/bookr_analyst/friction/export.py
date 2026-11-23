@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from ..config import settings
 from . import taxonomy as TX
 from .signals import config
-from .store import all_dicts, conn, now_iso
+from .store import all_dicts, conn, now_iso, save_export_file
 
 CONTEXT_TURNS = 6
 
@@ -53,7 +53,7 @@ def dataset_items() -> list[dict]:
         return all_dicts(c.execute("""
             SELECT i.*, f.day, f.flow, f.title, f.transcript, f.session_started_local, f.submitted_at
             FROM items i JOIN findings f ON f.id = i.finding_id
-            WHERE i.verdict = 'agree' ORDER BY i.reviewed_at DESC""").fetchall())
+            WHERE i.verdict = 'agree' ORDER BY i.reviewed_at DESC NULLS LAST, i.id DESC""").fetchall())
 
 
 def build_example(it: dict) -> dict:
@@ -184,14 +184,16 @@ def write_export(created_by: str | None) -> dict:
             for e in exs:
                 f.write(json.dumps(e, ensure_ascii=False) + "\n")
         md.write_text(to_markdown(exs, key), encoding="utf-8")
+        for f in (jl, md):
+            save_export_file(f.name, f.read_text(encoding="utf-8"))
         files.append({"group": key, "label": g["label"], "count": len(exs), "jsonl": jl.name, "md": md.name})
     n_rules = len({e["guidance"].strip() for e in examples if e["group"] != "engineering" and e["guidance"].strip()})
     main = next((f for f in files if f["group"] == "intent_rag"), files[0] if files else None)
     with conn() as c:
         cur = c.execute("""INSERT INTO exports (created_at, created_by, examples, rules, jsonl_file, md_file, files, counts)
-                           VALUES (?,?,?,?,?,?,?,?)""",
+                           VALUES (?,?,?,?,?,?,?,?) RETURNING id""",
                         (now_iso(), created_by, len(examples), n_rules, main["jsonl"] if main else None,
                          main["md"] if main else None, json.dumps(files), json.dumps(counts)))
-        eid = cur.lastrowid
+        eid = cur.fetchone()[0]
     return {"id": eid, "examples": len(examples), "rules": n_rules, "files": files, "counts": counts,
             "jsonl_file": main["jsonl"] if main else None, "md_file": main["md"] if main else None}

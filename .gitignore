@@ -4,3 +4,9 @@ data/
 **/__pycache__/
 frontend/node_modules/
 frontend/dist/
+
+# Agent harness: only machine-local state stays out (CLAUDE.md, AGENTS.md and .claude/hooks are committed).
+.claude/state/
+.claude/worktrees/
+.claude/*.local.json
+.DS_Store

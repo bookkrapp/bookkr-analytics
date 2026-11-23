@@ -90,11 +90,11 @@ def _mode(use_llm: bool | None) -> str:
 def _create_run(day: date, use_llm: bool | None, triggered_by: str) -> int:
     mode = _mode(use_llm)
     with conn() as c:
-        cur = c.execute("INSERT INTO runs (day, started_at, status, mode, model, triggered_by, progress) VALUES (?,?,?,?,?,?,?)",
+        cur = c.execute("INSERT INTO runs (day, started_at, status, mode, model, triggered_by, progress) VALUES (?,?,?,?,?,?,?) RETURNING id",
                         (day.isoformat(), now_iso(), "running", mode,
                          f"{J.model_name()} · {J.provider_label()}" if mode == "llm" else None,
                          triggered_by, "Loading chats…"))
-        return cur.lastrowid
+        return cur.fetchone()[0]
 
 
 def _progress(run_id: int, text: str, **counts):
@@ -153,7 +153,7 @@ def run_day(day: date, use_llm: bool | None = None, triggered_by: str = "cli", r
             with conn() as c:
                 fps = [dict(r) for r in c.execute(
                     "SELECT type, what_went_wrong, review_note FROM items WHERE verdict = 'not_friction' "
-                    "ORDER BY reviewed_at DESC LIMIT ?", (cfg["llm"]["max_known_false_positives_in_prompt"],))]
+                    "ORDER BY reviewed_at DESC NULLS LAST LIMIT ?", (cfg["llm"]["max_known_false_positives_in_prompt"],))]
             system = J.build_system(fps)
             client = J.make_client()
             done = 0
@@ -212,11 +212,11 @@ def run_day(day: date, use_llm: bool | None = None, triggered_by: str = "cli", r
                 r = results[sid]
                 cur = c.execute(
                     """INSERT INTO findings (run_id, day, session_id, user_id, title, flow, session_started_local, n_user_msgs,
-                       outcome, score, source, summary, signals, transcript, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       outcome, score, source, summary, signals, transcript, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id""",
                     (run_id, day.isoformat(), sid, f["user_id"], f["title"], f["current_flow"], f["created_local"],
                      f["n_user_msgs"], f["stage"], b["score"], r["source"], r["summary"],
                      json.dumps(b["signals"], default=str), json.dumps(b["turns"], default=str), now_iso()))
-                fid = cur.lastrowid
+                fid = cur.fetchone()[0]
                 for it in r["items"]:
                     it = _route(it, b)
                     c.execute(
