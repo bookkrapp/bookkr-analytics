@@ -82,6 +82,7 @@ one day of chats ──► rule signals (score) ──► LLM judge (Claude, opt
 
 - **Run it:** in the app, go to Friction Finder → pick a day → **Run analysis**. Or from the command line:
   `cd backend; .\.venv\Scripts\python.exe -m bookr_analyst.friction --sync --day 2026-11-20` (default day = yesterday, IST; `--rules-only` skips the LLM).
+- **One day, end to end, without an API key:** `cd backend; python scripts/run_day.py 2026-11-22` syncs, judges that day through the Claude Code CLI, groups the items into issues, writes the briefs and refreshes the RAG pack (the same steps as the daily schedule). A future date is refused; `--skip-sync` reuses the data already synced.
 - **Daily, automatically:** set `FRICTION_DAILY_AT=09:00` in `.env`. While the server runs, it syncs and analyses yesterday's chats at that time each day.
 - **Which chats:** a chat belongs to the IST day of its *last* user message, so it is analysed once, with its full history.
 - **Rule R1:** the assistant asking for a mandatory field is never friction. The user repeating a value they had already given *is*. The fields are in `config/friction.json → ask_patterns` (still to be confirmed by the team, see TRACKER Q1).
