@@ -1,0 +1,30 @@
+tables: 
+1. Message, chat session, extracted intent, flight booking, flight search request/result, hotel search request/result, unified chat flow state, 
+
+2. tell claude that we have mandatory input parameters so not to hallucinate on that. 
+3. active and recurring users check
+4. inj every dashboard for all kpi add i icon. 
+5. link in frication section to chats so each chat can be reviewed manually and review node for us to approve detection, if not give reason which finally makes the additional data for rag during search.
+6. first priority to check where we are back in intent collection or classfification, stuck in a flow, and create data from it by exsposing the system to production data in batches and then review them and store to be later send to our main bookkr agent as rag. 
+7. 
+
+
+1. add filter for hotels and flights in funnel.
+2. check : Came back within 30 daysi
+100%
+n = 2 users
+3. let payas know where dropdown values are coming from
+4. segregate technical issues from intent capture issue. keep in mind the dataset to be produced after review should be helpful as rag context. in case of technical issues, review with human, take its suggestions, create a export at the end to be shared with claude later and investigate issues in prod bookkr agent. 
+5. show distinct issues in single chat session, not duplicate. 
+6. and token consumption information. also prediction if i refresh how much would be consumed. estimate the cost of llm based on model we're using. 
+7. ensure extracted intent object is right, json example is up to date to this application. 
+
+
+1. Also give analysis on which kind of friction happened hwo many times and what kinda issue would be actionable on priority. I want it t useful to me in such a way that i receive automated reports about what kind of issue majorly happened this week or monthly highlights, which helps me in deciding ok i need to get issue 1 checked first because so man people are facing this. 
+
+
+Sila Sonerila
+The Tamara 27-29 November
+Mulberyy Shades - Nandi Hills
+La Sarene
+GoStops Bangalore

@@ -1,0 +1,486 @@
+<title>Bookkr System Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column (~880px) of sections; diagrams and tables scroll inside their own frames. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #16181d;
+  --muted: #5b6270;
+  --line: #dfe2e8;
+  --accent: #0f6a6a;
+  --tech: #b4512b;
+  --tech-bg: #fbeee7;
+  --intent: #5a43c8;
+  --intent-bg: #efebfd;
+  --sugg: #17708a;
+  --sugg-bg: #e5f3f7;
+  --eng-bg: #f0f1f4;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --surface: #191c22; --fg: #e8eaee; --muted: #9aa1ad; --line: #2c313a;
+    --accent: #4fc2c0; --tech: #f0936c; --tech-bg: #33221b; --intent: #a797ff; --intent-bg: #251f3d;
+    --sugg: #6cc3da; --sugg-bg: #17282e; --eng-bg: #22262d; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --surface: #191c22; --fg: #e8eaee; --muted: #9aa1ad; --line: #2c313a;
+  --accent: #4fc2c0; --tech: #f0936c; --tech-bg: #33221b; --intent: #a797ff; --intent-bg: #251f3d;
+  --sugg: #6cc3da; --sugg-bg: #17282e; --eng-bg: #22262d; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 920px; margin: 0 auto; padding-block: 40px 80px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 48px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+section { display: flex; flex-direction: column; gap: 16px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { color: var(--muted); font-size: 1.02rem; }
+code, .mono { font-family: var(--font-mono); font-size: 0.85em; }
+code { background: var(--eng-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.buckets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 760px) { .buckets { grid-template-columns: 1fr; } }
+.bucket { border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.bucket .tag { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500; }
+.bucket.t { border-top: 4px solid var(--tech); } .bucket.t .tag { color: var(--tech); }
+.bucket.i { border-top: 4px solid var(--intent); } .bucket.i .tag { color: var(--intent); }
+.bucket.s { border-top: 4px solid var(--sugg); } .bucket.s .tag { color: var(--sugg); }
+.bucket ul { margin: 0; padding-left: 18px; font-size: 0.9rem; color: var(--muted); }
+.bucket .goes { font-size: 0.85rem; border-top: 1px dashed var(--line); padding-top: 8px; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.diagram pre.mermaid { margin: 0; background: transparent; display: flex; justify-content: center; min-width: 640px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 0.82rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #8a8f99; display: inline-block; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; min-width: 680px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--eng-bg); }
+tr:last-child td { border-bottom: none; }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; padding: 1px 8px; border-radius: 999px; white-space: nowrap; font-weight: 500; }
+.pill.t { background: var(--tech-bg); color: var(--tech); }
+.pill.i { background: var(--intent-bg); color: var(--intent); }
+.pill.s { background: var(--sugg-bg); color: var(--sugg); }
+.pill.e { background: var(--eng-bg); color: var(--muted); }
+.yes { color: var(--accent); font-weight: 600; }
+.no { color: var(--tech); font-weight: 600; }
+.callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.callout p { font-size: 0.93rem; }
+ol.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; max-width: 72ch; }
+.meta { font-size: 0.82rem; color: var(--muted); font-family: var(--font-mono); }
+</style>
+
+<div class="wrap">
+
+<header style="display:flex;flex-direction:column;gap:12px">
+  <div class="eyebrow">Bookkr · UAT code base · read 2026-11-19</div>
+  <h1>Bookkr System Map</h1>
+  <p class="lede">How the three Bookkr apps, the chat pipeline and the outside services fit together, and how the Friction Finder should use that map to sort each friction into one of three buckets and send it to the right fix: an engineering ticket, a prompt change, RAG examples or fine-tuning data.</p>
+  <p class="meta">Source: bookkr-combined-uat.zip · docs/architecture/*.md · bookkrapp/src/modules · prisma/schema.prisma</p>
+</header>
+
+<section>
+  <h2>The three buckets</h2>
+  <p>Sort every friction item by <strong>what the user ran into</strong>. Then a second question, <strong>which component made the first wrong decision</strong>, picks the fix. Only items where an LLM made the first wrong decision belong in the RAG or fine-tuning dataset.</p>
+  <div class="buckets">
+    <div class="bucket t">
+      <div class="tag">Technical</div>
+      <h3>The system broke</h3>
+      <ul>
+        <li>Provider error or timeout (SerpAPI, Tripjack, gateway)</li>
+        <li>LLM call failed, timed out or returned bad JSON</li>
+        <li>Payment failed, fare expired, price changed</li>
+        <li>Slow turn, crash, 5xx</li>
+        <li>Phone never got the event, or an old build drew a stub</li>
+      </ul>
+      <div class="goes"><strong>Fix:</strong> engineering ticket. Never training data.</div>
+    </div>
+    <div class="bucket i">
+      <div class="tag">Intent</div>
+      <h3>Bookkr misread the user</h3>
+      <ul>
+        <li>User had to repeat a value they already gave</li>
+        <li>Wrong city, date, party, trip type</li>
+        <li>Turn sent to the wrong flow</li>
+        <li>Preference dropped or not applied</li>
+        <li>Asked for something it already had</li>
+      </ul>
+      <div class="goes"><strong>Fix:</strong> RAG or fine-tuning if the LLM got it wrong; code fix if a rule got it wrong.</div>
+    </div>
+    <div class="bucket s">
+      <div class="tag">Agent suggestion</div>
+      <h3>Understood, but offered something poor</h3>
+      <ul>
+        <li>Results ranked against the stated preference</li>
+        <li>Unrealistic or repetitive trip plan</li>
+        <li>Wrong or ungrounded answer to a travel question</li>
+        <li>Irrelevant reply chips, odd airport or date options</li>
+        <li>Asked for something Bookkr does not do</li>
+      </ul>
+      <div class="goes"><strong>Fix:</strong> prompt or RAG for the LLM that wrote it; ranking or product change otherwise.</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Diagram 1</div>
+  <h2>System architecture</h2>
+  <p>Three apps share one backend. <code>bookkrapp</code> is the only thing that talks to Postgres, Redis, the LLMs and the travel providers. Flights and hotels go through a separate <code>travel-gateway</code>; payments go through a separate <code>bookkrapp-payments</code> service.</p>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph CL["Clients"]
+    WEB["Web app<br/>React 18 + Vite"]
+    MOB["Mobile app<br/>Expo / React Native"]
+  end
+  subgraph API["bookkrapp API · Express + TypeScript · Render"]
+    CHAT["Chat pipeline<br/>router · intent · orchestrators"]
+    BOOK["Booking · wallet · pricing rules"]
+    LOG["AnalyticsEvent · LlmCallLog<br/>admin alerts"]
+    BUS["ConversationEventBus"]
+  end
+  subgraph DATA["Data"]
+    PG[("Neon Postgres<br/>Prisma")]
+    RD[("Upstash Redis<br/>cache · locks · streams")]
+    R2[("Cloudflare R2<br/>photos")]
+  end
+  subgraph AI["LLM providers"]
+    OAI["OpenAI<br/>gpt-4.1-mini · gpt-4.1 web search"]
+    WB["W&B Inference<br/>Qwen3-14B / Nemotron LoRA"]
+  end
+  subgraph TRAVEL["Travel inventory"]
+    GW["travel-gateway<br/>service auth"]
+    SERP["SerpAPI<br/>Google Flights + Hotels"]
+    TJ["Tripjack<br/>bookable flights + hotels"]
+  end
+  GOOG["Google<br/>Geocoding · Places · Routes"]
+  TAV["Tavily<br/>web search"]
+  ABLY["Ably realtime"]
+  PAYS["bookkrapp-payments"]
+  RZP["Razorpay"]
+  RES["Resend email"]
+  NOTIF["Notification service<br/>Redis Streams · ADR 0004"]
+  TF["ticket-forwarder<br/>Cloudflare Email Worker"]
+  BA["Bookr Analyst<br/>DuckDB + Claude judge"]
+
+  WEB -- "REST + SSE" --> CHAT
+  MOB -- "REST" --> CHAT
+  CHAT --> BUS
+  BUS -- "SSE" --> WEB
+  BUS --> ABLY -- "only realtime on phone" --> MOB
+  CHAT --> OAI
+  CHAT --> WB
+  CHAT --> GOOG
+  CHAT --> TAV
+  CHAT --> GW
+  BOOK --> GW
+  GW --> SERP
+  GW --> TJ
+  BOOK --> PAYS --> RZP
+  CHAT --> PG
+  BOOK --> PG
+  CHAT --> RD
+  RD -- "domain events" --> NOTIF
+  CHAT --> R2
+  TJ -. "e-ticket email" .-> TF -- "signed POST" --> BOOK
+  BOOK --> RES
+  PG -. "read-only sync, PII masked" .-> BA
+
+  classDef client fill:#e9ecf2,stroke:#7d8594,color:#16181d
+  classDef core fill:#d9efee,stroke:#0f6a6a,color:#16181d
+  classDef store fill:#e3f1e4,stroke:#3d7d47,color:#16181d
+  classDef llm fill:#ebe5ff,stroke:#5a43c8,color:#16181d
+  classDef ext fill:#fdebdc,stroke:#b4512b,color:#16181d
+  classDef ours fill:#fff6d6,stroke:#9a7a12,color:#16181d
+  class WEB,MOB client
+  class CHAT,BOOK,LOG,BUS core
+  class PG,RD,R2 store
+  class OAI,WB llm
+  class GW,SERP,TJ,GOOG,TAV,ABLY,PAYS,RZP,RES,NOTIF,TF ext
+  class BA ours
+</pre>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:#e9ecf2"></i>Clients</span>
+    <span><i class="sw" style="background:#d9efee"></i>Bookkr backend</span>
+    <span><i class="sw" style="background:#e3f1e4"></i>Data stores</span>
+    <span><i class="sw" style="background:#ebe5ff"></i>LLM providers</span>
+    <span><i class="sw" style="background:#fdebdc"></i>External or adjacent services</span>
+    <span><i class="sw" style="background:#fff6d6"></i>Bookr Analyst</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Layer</th><th>Technology</th><th>Where friction can start</th></tr></thead>
+      <tbody>
+        <tr><td>Web client</td><td>React 18, Vite, Leaflet maps, Recharts, Lottie</td><td>Rendering cards, SSE stream drops</td></tr>
+        <tr><td>Mobile client</td><td>Expo / React Native, expo-router, Zustand, TanStack Query, Ably, speech recognition, Google and Apple sign-in</td><td>No SSE at all: an event not forwarded to Ably never reaches the phone. Old builds draw new card kinds as a stub.</td></tr>
+        <tr><td>Backend</td><td>Node, Express, TypeScript, Prisma, Zod, Winston, Helmet</td><td>5xx, state bugs, deterministic rule bugs</td></tr>
+        <tr><td>Data</td><td>Neon Postgres, Upstash Redis (cache, locks, sessions, streams), Cloudflare R2</td><td>Cache serving stale prices, lost state</td></tr>
+        <tr><td>LLMs</td><td>OpenAI <code>gpt-4.1-mini</code> by default for every task, <code>gpt-4.1</code> for grounded web search, a Qwen3-14B or Nemotron LoRA on W&amp;B for intent extraction (behind <code>INTENT_QWEN_LORA_ENABLED</code>, with gpt-4.1-mini as fallback)</td><td>Misreads (intent), poor writing (suggestion), timeouts or bad JSON (technical)</td></tr>
+        <tr><td>Travel</td><td>travel-gateway → SerpAPI (Google Flights and Hotels, partner links) and Tripjack (in-house booking)</td><td>Timeouts, empty results, fares that can't be booked</td></tr>
+        <tr><td>Places and web</td><td>Google Geocoding, Places, Route Matrix; Tavily; airport-data-js, all-the-cities</td><td>Wrong airport or city resolved</td></tr>
+        <tr><td>Money</td><td>bookkrapp-payments → Razorpay; wallet and coupons in bookkrapp</td><td>Payment failed, booking failed after payment</td></tr>
+        <tr><td>Messaging</td><td>Ably, SSE, Resend email, notification service on Redis Streams, Cloudflare Email Worker for Tripjack e-tickets</td><td>Ticket not delivered, push missing</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Diagram 2 · the one that matters most for sorting</div>
+  <h2>One chat turn: who decides what</h2>
+  <p>Every product action is a chat turn. The turn passes through LLM steps (purple) and fixed rules (grey). When a chat goes wrong, the colour of the <strong>first step that went wrong</strong> tells you whether data can fix it. Purple: RAG, fine-tuning or a prompt change can help. Grey: a code change is the fix. Orange: an outside service failed, so it is technical.</p>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  U(["User message"]) --> G{"Hotel card still open?<br/>sticky gate"}
+  G -- yes --> HS["Hotel extractor turnScope<br/>stay or other"]
+  G -- no --> UF{"Cab, bus, train,<br/>activity request?"}
+  HS -- stay --> HOT
+  HS -- other --> UF
+  UF -- yes --> FIX["Fixed 'coming soon' reply"]
+  UF -- no --> RT["Route the turn<br/>unified_chat_route"]
+  RT --> EX["Extract travel intent<br/>unified_intent_extraction<br/>LoRA first, gpt-4.1-mini fallback"]
+  EX --> POL["Fixed policies after the LLM<br/>canonicalise · merge with earlier turns ·<br/>no past dates · exact-window rule ·<br/>mixed round trip · airport choice"]
+  POL --> AD{"ActionDecider<br/>ask, confirm or search?"}
+  AD -- "mandatory slot missing" --> ASK["Follow-up question<br/>template from missing slots"]
+  AD -- "new or changed search" --> CONF["Confirmation card<br/>Here is what I have so far"]
+  AD -- "already confirmed" --> FLOW{"Which flow?"}
+  CONF -- "user says yes" --> FLOW
+  FLOW -- flight --> FS["Params builder → FlightService<br/>Redis cache → gateway"]
+  FS --> PRV["SerpAPI + Tripjack"]
+  PRV --> RK["PreferenceEngine ranks<br/>session → defaults → saved"]
+  RK --> RC["Write the reply<br/>generate_response"]
+  FLOW -- hotel --> HOT["Hotel search<br/>SerpAPI Hotels + Tripjack<br/>→ hotel ranker"]
+  HOT --> HH["Hotel highlights<br/>hotel_highlights"]
+  FLOW -- "trip plan" --> TR["Turn rules 1-8<br/>then router model"]
+  TR --> PLN["Generate or edit plans<br/>multi_city_intent"]
+  PLN --> DO["Date options · leg flights<br/>fixed algorithms"]
+  FLOW -- "travel question" --> WC["Needs web search?<br/>web_search_category"]
+  WC --> WS["Tavily or OpenAI web search"]
+  WS --> WG["Grounded answer<br/>web_search_grounded"]
+  RC --> NUD["Reply chips<br/>nudge_recommendation"]
+  HH --> NUD
+  DO --> NUD
+  WG --> NUD
+  ASK --> NUD
+  NUD --> OUT(["Save message in Postgres<br/>SSE to web · Ably to phone"])
+
+  classDef llm fill:#ebe5ff,stroke:#5a43c8,color:#16181d
+  classDef det fill:#eceef2,stroke:#7d8594,color:#16181d
+  classDef ext fill:#fdebdc,stroke:#b4512b,color:#16181d
+  classDef io fill:#d9efee,stroke:#0f6a6a,color:#16181d
+  class HS,RT,EX,RC,HH,TR,PLN,WC,WG,NUD llm
+  class G,UF,FIX,POL,AD,ASK,CONF,FLOW,RK,DO det
+  class FS,PRV,HOT,WS ext
+  class U,OUT io
+</pre>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:#ebe5ff"></i>LLM step: data can fix it</span>
+    <span><i class="sw" style="background:#eceef2"></i>Fixed rule: code fix</span>
+    <span><i class="sw" style="background:#fdebdc"></i>Outside service: technical</span>
+  </div>
+  <div class="callout">
+    <h3>Two things in this pipeline that change how we sort</h3>
+    <p><strong>Many "the bot misunderstood me" moments are decided by code, not by the LLM.</strong> After extraction, fixed rules move past dates forward, decide whether a window is exact, detect mixed round trips, pick airports and decide whether to ask or search. If the LLM's output was right and one of these rules changed it, putting that chat into the RAG file teaches the model nothing and adds noise. The judge has to compare three things: what the user said, what the extractor returned (<code>ExtractedIntent.parameters</code>), and what the search actually ran with (<code>FlightSearchRequest</code>, <code>HotelSearchRequest</code>).</p>
+    <p><strong>The fine-tuned extractor and the RAG file pull in different directions.</strong> When the LoRA model serves a turn, it gets the short instruction it was trained on, not the 9k production prompt. Retrieved few-shot examples pasted into that prompt are outside its training format. So the fix for a LoRA miss is new training rows. The fix for a gpt-4.1-mini miss is RAG. <code>LlmCallLog.model</code> shows which model served the turn.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Every LLM task in Bookkr</h2>
+  <p>Each task reads its own <code>GPT_MODEL_&lt;TASK&gt;</code> setting and falls back to <code>GPT_MODEL</code> (<code>gpt-4.1-mini-2025-04-14</code>). Each call is logged to <code>LlmCallLog</code> with its task, model, latency, success and error. That table is how the Friction Finder ties a bad turn to the LLM that caused it.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Task</th><th>What it decides</th><th>If it is wrong</th><th>Fix lane</th></tr></thead>
+      <tbody>
+        <tr><td><code>unified_intent_extraction</code></td><td>The travel intent: cities, dates, party, trip type, preferences, action hint</td><td><span class="pill i">Intent</span></td><td>RAG on gpt-4.1-mini; training rows on the LoRA. This is the only task with a fine-tuning pipeline today (Qwen3-14B, 4,800 training rows, eval gates).</td></tr>
+        <tr><td><code>unified_chat_route</code></td><td>Which flow the message belongs to: flights, plans, general, out of domain</td><td><span class="pill i">Intent</span> wrong flow</td><td>RAG examples of routing</td></tr>
+        <tr><td>Hotel extractor <code>turnScope</code></td><td>Whether a turn with a hotel card open is about the stay</td><td><span class="pill i">Intent</span> hijacked turn</td><td>RAG; there is an eval for it (<code>eval:hotel-turn-scope</code>)</td></tr>
+        <tr><td><code>multi_city_intent</code> and the plan router</td><td>Plan generation and edits, and which plan the words point at</td><td><span class="pill i">Intent</span> wrong plan picked · <span class="pill s">Suggestion</span> poor plan</td><td>RAG for routing; prompt or RAG for plan quality</td></tr>
+        <tr><td><code>multi_route_check</code></td><td>Whether a flight request needs more than one route</td><td><span class="pill i">Intent</span></td><td>RAG</td></tr>
+        <tr><td><code>generate_response</code>, <code>visible_thread</code></td><td>The prose the traveller reads with the cards</td><td><span class="pill s">Suggestion</span></td><td>Prompt for rules and tone; RAG for good-reply examples</td></tr>
+        <tr><td><code>web_search_category</code>, <code>web_search_grounded</code></td><td>Whether to search the web, and the grounded answer</td><td><span class="pill s">Suggestion</span> wrong or unsupported answer</td><td>Prompt; better sources. Fine-tuning does not fix facts.</td></tr>
+        <tr><td><code>nudge_recommendation</code></td><td>Up to two reply chips under a reply</td><td><span class="pill s">Suggestion</span></td><td>Prompt rules (<code>nudgeRules.ts</code>), then RAG</td></tr>
+        <tr><td><code>soft_signals</code></td><td>Preferences the user implied ("prefer morning")</td><td><span class="pill i">Intent</span> preference missed</td><td>RAG</td></tr>
+        <tr><td><code>hotel_highlights</code>, <code>chat_session_title</code></td><td>Short hotel summaries, chat names</td><td><span class="pill s">Suggestion</span>, low stakes</td><td>Prompt</td></tr>
+        <tr><td>Any task: call failed, timed out, unparseable</td><td>n/a</td><td><span class="pill t">Technical</span></td><td>Engineering. The LoRA falling back to gpt-4.1-mini with nothing visible to the user is a log entry, not friction.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Diagram 3</div>
+  <h2>Search to ticket: where technical friction clusters</h2>
+  <p>Booking crosses every app and three outside services. Nearly every failure here is technical. The exception is a fare the traveller never asked for, which is a suggestion problem.</p>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  R["Result card"] --> B{"Who can sell it?"}
+  B -- "SerpAPI only" --> EXT["Partner site link<br/>leaves Bookkr"]
+  B -- "Tripjack fare" --> FQ["Fare quote and validate"]
+  FQ -- "price moved" --> PC["booking_price_changed"]
+  FQ -- "session timed out" --> FE["booking_fare_expired"]
+  FQ --> STEPS["Travellers · seats · extras ·<br/>rules · review"]
+  STEPS --> PAY["bookkrapp-payments<br/>Razorpay checkout"]
+  PAY -- "failed or closed" --> PF["payment_failed ·<br/>payment_dismissed"]
+  PAY -- paid --> BK["Tripjack book → PNR"]
+  BK -- "failed after payment" --> REL["Money released ·<br/>failureReason saved"]
+  BK --> TK["Tripjack e-ticket email →<br/>ticket-forwarder → Resend"]
+  TK --> DONE(["Traveller has the ticket"])
+
+  classDef hot fill:#fdebdc,stroke:#b4512b,color:#16181d
+  classDef ok fill:#eceef2,stroke:#7d8594,color:#16181d
+  classDef io fill:#d9efee,stroke:#0f6a6a,color:#16181d
+  class PC,FE,PF,REL hot
+  class R,B,EXT,FQ,STEPS,PAY,BK,TK ok
+  class DONE io
+</pre>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Diagram 4 · step 1 of sorting</div>
+  <h2>Which bucket?</h2>
+  <p>Ask the questions in this order. The first "yes" decides. Technical comes first because a broken service can look like a misunderstanding. A provider that returns nothing makes the bot sound as if it ignored the user.</p>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  S(["A flagged moment in a chat"]) --> Q0{"Is it friction at all?"}
+  Q0 -- "No: a mandatory field was asked (R1),<br/>user changed their mind,<br/>there really was no availability" --> NF["Not friction<br/>teaches the finder"]
+  Q0 -- yes --> Q1{"In that turn, did a call fail,<br/>time out or crash, or a payment<br/>or fare step fail?"}
+  Q1 -- yes --> T["TECHNICAL"]
+  Q1 -- no --> Q2{"Did the extractor capture<br/>what the user said?<br/>user words vs ExtractedIntent"}
+  Q2 -- no --> I1["INTENT<br/>LLM made the first wrong decision"]
+  Q2 -- yes --> Q3{"Did the search or plan<br/>run with those values?<br/>intent vs search request"}
+  Q3 -- no --> I2["INTENT<br/>a rule after the LLM changed it"]
+  Q3 -- yes --> Q4{"Were the results, plan,<br/>answer or chips right<br/>for that intent?"}
+  Q4 -- no --> SG["AGENT SUGGESTION"]
+  Q4 -- "the user wanted<br/>something Bookkr can't do" --> PG["AGENT SUGGESTION<br/>product gap"]
+
+  classDef t fill:#fdebdc,stroke:#b4512b,color:#16181d
+  classDef i fill:#ebe5ff,stroke:#5a43c8,color:#16181d
+  classDef s fill:#dff0f5,stroke:#17708a,color:#16181d
+  classDef q fill:#eceef2,stroke:#7d8594,color:#16181d
+  class T t
+  class I1,I2 i
+  class SG,PG s
+  class S,Q0,Q1,Q2,Q3,Q4,NF q
+</pre>
+  </div>
+</section>
+
+<section>
+  <div class="eyebrow">Diagram 5 · step 2 of sorting</div>
+  <h2>Which fix: engineering, prompt, RAG or fine-tuning?</h2>
+  <p>This follows the decision already in the tracker: retrieval first, and fine-tune only when retrieval stops improving the eval set. The thresholds are proposed defaults for the team to confirm.</p>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  F(["Reviewed item, marked Agree"]) --> W{"First wrong decision<br/>made by?"}
+  W -- "outside service, client,<br/>infra, or a fixed rule" --> ENG["Engineering ticket<br/>never enters the dataset"]
+  W -- "an LLM task" --> P{"Is the lesson a rule that<br/>must always hold?<br/>e.g. never suggest past dates"}
+  P -- yes --> PR["Prompt or policy change<br/>plus a regression eval case"]
+  P -- no --> TK{"Which task?"}
+  TK -- "unified_intent_extraction" --> M{"Which model served it?<br/>LlmCallLog.model"}
+  M -- "gpt-4.1-mini" --> RAG["RAG file<br/>few-shot examples for<br/>the extraction prompt"]
+  M -- "Qwen or Nemotron LoRA" --> FT["Fine-tune queue<br/>new realism rows, retrain,<br/>pass the ship gates"]
+  TK -- "router, plans, replies,<br/>web answers, chips" --> RAG2["RAG file for that<br/>task's prompt"]
+  RAG --> E{"Same guidance cluster,<br/>20+ agreed items, still<br/>failing the eval with RAG?"}
+  E -- yes --> FT
+  E -- no --> KEEP["Keep in RAG"]
+  RAG2 --> E2{"Structural miss: lost keys,<br/>state not carried between turns,<br/>schema broken?"}
+  E2 -- yes --> FTN["Candidate for that task's<br/>first fine-tune"]
+  E2 -- no --> KEEP
+
+  classDef eng fill:#eceef2,stroke:#7d8594,color:#16181d
+  classDef rag fill:#ebe5ff,stroke:#5a43c8,color:#16181d
+  classDef ft fill:#fff6d6,stroke:#9a7a12,color:#16181d
+  classDef pr fill:#dff0f5,stroke:#17708a,color:#16181d
+  class ENG eng
+  class RAG,RAG2,KEEP rag
+  class FT,FTN ft
+  class PR pr
+  class F,W,P,TK,M,E,E2 eng
+</pre>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Choose</th><th>When</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><strong>RAG / few-shot</strong></td><td>One-off or long-tail phrasing: Hinglish, slang, city nicknames, an odd date form. Under about 20 examples of the pattern. The served model is gpt-4.1-mini.</td><td>Ships the same day, can be undone, and each example can be traced to a reviewed chat.</td></tr>
+        <tr><td><strong>Fine-tuning</strong></td><td>The same lesson keeps failing the eval with RAG in place. Or the miss is structural: keys lost (the LoRA canonicaliser logs <code>intent.qwen_lora.repaired</code>), state not kept across turns, broken JSON. Or the served model is the LoRA.</td><td>Teaches the contract itself. Costs a training run (about $10–20 of GPU) and has to pass the ship gates in <code>docs/operations/finetuning.md</code>.</td></tr>
+        <tr><td><strong>Prompt change</strong></td><td>The lesson is a rule, such as "at most two chips, no money" or "say cabs are coming soon".</td><td>A rule written once beats twenty examples that imply it.</td></tr>
+        <tr><td><strong>Engineering</strong></td><td>Technical bucket, or a fixed rule made the first wrong decision.</td><td>The LLM was right. Training on it would teach the model the wrong thing.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Signals the Friction Finder can use</h2>
+  <p>"Synced" means the data already reaches Bookr Analyst's DuckDB. The missing ones are mostly in <code>AnalyticsEvent</code>, which the sync does not pull yet, and they carry most of the technical signal.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Signal</th><th>Points to</th><th>Source</th><th>Synced</th></tr></thead>
+      <tbody>
+        <tr><td>LLM call <code>success = false</code> or an error in the turn</td><td><span class="pill t">Technical</span></td><td><code>LlmCallLog</code></td><td class="yes">Yes</td></tr>
+        <tr><td>LLM latency well above that task's p95</td><td><span class="pill t">Technical</span></td><td><code>LlmCallLog.latencyMs</code></td><td class="yes">Yes, unused</td></tr>
+        <tr><td>Which model served intent extraction</td><td>Picks RAG or fine-tuning</td><td><code>LlmCallLog.model</code></td><td class="yes">Yes, unused</td></tr>
+        <tr><td>"Something went wrong", <code>shared_failure</code> message</td><td><span class="pill t">Technical</span></td><td><code>Message</code></td><td class="yes">Yes, today counted as intent "dead_end"</td></tr>
+        <tr><td>"No flights found" on a valid route and date</td><td>Usually not friction; <span class="pill t">Technical</span> if the provider errored</td><td><code>Message</code> + result counts</td><td class="yes">Partly</td></tr>
+        <tr><td>Booking <code>failureReason</code>, payment status</td><td><span class="pill t">Technical</span></td><td><code>FlightBooking</code></td><td class="yes">Yes</td></tr>
+        <tr><td><code>payment_failed</code>, <code>booking_fare_expired</code>, <code>booking_price_changed</code></td><td><span class="pill t">Technical</span></td><td><code>AnalyticsEvent</code></td><td class="no">No</td></tr>
+        <tr><td>Platform and app version of the user</td><td><span class="pill t">Technical</span> old-build or phone-only issues</td><td><code>AnalyticsEvent.platform</code>, <code>appVersion</code></td><td class="no">No</td></tr>
+        <tr><td><code>hotel_search_results_shown</code> with 0 results</td><td><span class="pill t">Technical</span> or no availability</td><td><code>AnalyticsEvent</code></td><td class="no">No</td></tr>
+        <tr><td>User repeated a value, corrected the bot, edited the confirmation card</td><td><span class="pill i">Intent</span></td><td>Transcript rules</td><td class="yes">Yes</td></tr>
+        <tr><td>Extractor output differs from the search that ran</td><td><span class="pill i">Intent</span>, code-caused</td><td><code>ExtractedIntent</code> vs <code>FlightSearchRequest</code></td><td class="yes">Yes, not compared yet</td></tr>
+        <tr><td>Flight search with origin = destination</td><td><span class="pill i">Intent</span> (LLM or code)</td><td><code>FlightSearchRequest</code></td><td class="yes">Yes</td></tr>
+        <tr><td><code>unsupported_feature_requested</code></td><td><span class="pill s">Suggestion</span> product gap</td><td><code>AnalyticsEvent</code></td><td class="no">No</td></tr>
+        <tr><td>Reply chip tapped vs user typed their own</td><td><span class="pill s">Suggestion</span> chip usefulness</td><td><code>AnalyticsEvent</code> <code>reply_chips</code></td><td class="no">No</td></tr>
+        <tr><td>Filters or sort changed right after results</td><td><span class="pill s">Suggestion</span> ranking missed a preference</td><td><code>AnalyticsEvent</code> <code>flight_filters</code>, <code>flight_sort</code></td><td class="no">No</td></tr>
+        <tr><td>Thumbs down on a reply</td><td>Any bucket; the judge decides</td><td><code>AssistantMessageFeedback</code></td><td class="yes">Yes</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>What changes in the Friction Finder</h2>
+  <ol class="steps">
+    <li>Add a top-level <code>bucket</code> (technical, intent, agent_suggestion) and an <code>owner</code> (the LLM task, the rule or the service that made the first wrong decision) to every item, in the rules, the judge schema and the review page.</li>
+    <li>Move <code>dead_end</code> and <code>llm_failure</code> out of the intent types into technical sub-types: provider, llm_call, payment_booking, latency, client_delivery, app_error.</li>
+    <li>Add suggestion sub-types: ranking, plan_quality, answer_quality, chips, airport_or_date_options, product_gap.</li>
+    <li>Sync <code>AnalyticsEvent</code> (masked, booking, payment, search-result, chip and filter events only) and use <code>LlmCallLog.model</code> and latency.</li>
+    <li>Give the judge the three-way comparison for each flagged turn: user words, extractor output, search params.</li>
+    <li>Split the export. Intent items owned by an LLM go to the RAG file, or to the fine-tune queue if the LoRA served them. Suggestion items owned by an LLM go to a separate response-quality file. Everything else goes to an engineering list with the chat link.</li>
+    <li>Add a bucket filter and per-bucket counts on the Friction page, so technical items don't hide inside the intent queue.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Open questions for the team</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Question</th><th>Why it matters</th></tr></thead>
+      <tbody>
+        <tr><td>Q10</td><td>Is <code>INTENT_QWEN_LORA_ENABLED</code> on in production, and for which flows?</td><td>It decides whether intent misses go to RAG or to the fine-tune queue.</td></tr>
+        <tr><td>Q11</td><td>Is the notification service live, or only planned (ADR 0004)?</td><td>Missing pushes are technical friction only if it is live.</td></tr>
+        <tr><td>Q12</td><td>Does "suggestions from the agent" mean results, plans, chips and answers, as on this page? Or does it also include the clarifying questions?</td><td>It sets the line between the intent and suggestion buckets.</td></tr>
+        <tr><td>Q13</td><td>Fine-tune trigger: are 20 agreed items in one guidance cluster, still failing the eval with RAG, the right bar?</td><td>It sets how often a training run happens.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+</div>
