@@ -5,13 +5,15 @@ Serves the built React app from ../frontend/dist when it exists.
 """
 from __future__ import annotations
 
+import base64
+import secrets
 import threading
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import PROJECT_ROOT, settings
@@ -19,6 +21,30 @@ from .db import connect, db_lock, one, rows
 
 app = FastAPI(title="Bookr Analyst")
 OFF = int(settings.tz_offset_minutes)
+
+# Optional login for hosted deployments ---------------------------------------
+
+
+@app.get("/api/health", include_in_schema=False)
+def health():
+    return {"ok": True}
+
+
+if settings.basic_auth_password:
+    _expected = f"{settings.basic_auth_user}:{settings.basic_auth_password}".encode()
+
+    @app.middleware("http")
+    async def _basic_auth(request: Request, call_next):
+        if request.url.path != "/api/health":
+            scheme, _, token = request.headers.get("authorization", "").partition(" ")
+            try:
+                given = base64.b64decode(token) if scheme.lower() == "basic" else b""
+            except ValueError:
+                given = b""
+            if not secrets.compare_digest(given, _expected):
+                return Response("Login required", status_code=401,
+                                headers={"WWW-Authenticate": 'Basic realm="Bookr Analyst"'})
+        return await call_next(request)
 
 # Filters --------------------------------------------------------------------
 
@@ -478,6 +504,9 @@ app.include_router(friction_router)
 def _schedule():
     from .sync import run_sync
     start_daily_scheduler(lambda: run_sync(swap_lock=db_lock))
+    # Fresh deployment (empty data disk): pull the first copy in the background instead of showing an empty app.
+    if settings.source_database_url and not settings.analytics_db_path.exists():
+        trigger_sync()
 
 
 # Static frontend ------------------------------------------------------------

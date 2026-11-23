@@ -1,0 +1,38 @@
+# Render Blueprint: New > Blueprint > pick this repo. Values marked sync:false are asked for in the dashboard.
+services:
+  - type: web
+    name: bookr-analyst
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter            # persistent disks need a paid plan
+    numInstances: 1          # the DuckDB/SQLite files live on one disk; do not scale out
+    healthCheckPath: /api/health
+    disk:
+      name: bookr-analyst-data
+      mountPath: /app/data   # analytics.duckdb, friction.sqlite, exports/
+      sizeGB: 1
+    envVars:
+      - key: SOURCE_DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Login for the whole site (browser prompt). Leave both empty to run without a login.
+      - key: BASIC_AUTH_USER
+        sync: false
+      - key: BASIC_AUTH_PASSWORD
+        sync: false
+      - key: INTERNAL_USER_IDS
+        sync: false
+      - key: INTERNAL_EMAIL_DOMAINS
+        sync: false
+      - key: SYNC_SINCE
+        sync: false
+      - key: FRICTION_DAILY_AT
+        sync: false
+      - key: TZ_OFFSET_MINUTES
+        value: "330"
+      - key: FRICTION_LLM_PROVIDER
+        value: api           # the Claude Code CLI login is not available in the container
+      - key: FRICTION_USE_LLM
+        value: auto

@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+data/
+**/.venv/
+**/__pycache__/
+frontend/node_modules/
+frontend/dist/
+*.md
+*.txt
+!backend/requirements.txt
+SYSTEM_MAP.html
+start.ps1
+sql/

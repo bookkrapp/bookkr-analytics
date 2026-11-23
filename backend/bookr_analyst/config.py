@@ -41,6 +41,9 @@ class Settings:
     # Which account pays for the judge: auto | api (ANTHROPIC_API_KEY) | subscription (Claude Code CLI login, Pro/Max)
     friction_llm_provider: str = os.getenv("FRICTION_LLM_PROVIDER", "auto").strip().lower()
     claude_cli_path: str = os.getenv("CLAUDE_CLI_PATH", "").strip()
+    # Hosted deployments: when BASIC_AUTH_PASSWORD is set, every page and API call needs this login.
+    basic_auth_user: str = os.getenv("BASIC_AUTH_USER", "bookr").strip()
+    basic_auth_password: str = os.getenv("BASIC_AUTH_PASSWORD", "").strip()
 
 
 settings = Settings()
