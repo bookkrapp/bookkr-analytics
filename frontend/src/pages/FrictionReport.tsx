@@ -246,6 +246,7 @@ export default function Priorities({ view }: { view: "brief" | "issues" | "patte
   const [err, setErr] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [bucket, setBucket] = useState("");
+  const [groupBy, setGroupBy] = useState("priority");
   useEffect(() => { getJSON<any>("/api/friction/periods").then(setPeriods).catch((e) => setErr(e.message)); }, [tick]);
   const list: any[] = periods?.[period] ?? [];
   const start = sp.get("start") ?? list[0]?.start;
@@ -283,6 +284,9 @@ export default function Priorities({ view }: { view: "brief" | "issues" | "patte
   const p1 = rep?.issues.filter((i: any) => i.priority === "P1") ?? [];
   const affectedUsers = rep ? rep.issues.reduce((s: number, i: any) => s + i.users, 0) : 0;
   const byP = (p: string) => issues.filter((i: any) => i.priority === p);
+  const byCategory: [string, any[]][] = Object.entries(
+    issues.reduce((m: Record<string, any[]>, i: any) => { (m[i.theme || "Other"] ??= []).push(i); return m; }, {}) as Record<string, any[]>,
+  ).sort((a, b) => b[1].reduce((s, i) => s + i.users, 0) - a[1].reduce((s, i) => s + i.users, 0));
   const sumUsers = (l: any[]) => fmtNum(l.reduce((s, i) => s + i.users, 0));
   return (
     <>
@@ -338,13 +342,34 @@ export default function Priorities({ view }: { view: "brief" | "issues" | "patte
           </>}
 
           {view === "issues" && <>
-          <Card title="🎯 Issues by priority" info="f_priority" right={
-            <div className="seg">
-              {[["", "All"], ["technical", "⚙️ Technical"], ["intent", "🧠 Intent"], ["suggestion", "💬 Suggestion"]].map(([k, l]) => (
-                <button key={k} className={bucket === k ? "on" : ""} onClick={() => setBucket(k)}>{l}</button>
-              ))}
+          <Card title={groupBy === "category" ? "🗂️ Issues by category" : "🎯 Issues by priority"} info="f_priority" right={
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div className="seg">
+                {[["priority", "By priority"], ["category", "By category"]].map(([k, l]) => (
+                  <button key={k} className={groupBy === k ? "on" : ""} onClick={() => setGroupBy(k)}>{l}</button>
+                ))}
+              </div>
+              <div className="seg">
+                {[["", "All"], ["technical", "⚙️ Technical"], ["intent", "🧠 Intent"], ["suggestion", "💬 Suggestion"]].map(([k, l]) => (
+                  <button key={k} className={bucket === k ? "on" : ""} onClick={() => setBucket(k)}>{l}</button>
+                ))}
+              </div>
             </div>}>
-            {!issues.length ? (
+            {groupBy === "category" && issues.length > 0 ? (
+              <>
+                <div className="muted small" style={{ marginBottom: 10 }}>A category groups related issues in one product area. Biggest first, by users hit.</div>
+                {byCategory.map(([cat, list]) => (
+                  <details key={cat} className="cat-section" open={byCategory.length <= 4}>
+                    <summary>
+                      <span className="cat-name">{cat}</span>
+                      <span className="muted small">{list.length} issues · {sumUsers(list)} user hits · {fmtNum(list.reduce((s, i) => s + i.chats, 0))} chats</span>
+                      <span className="cat-prios">{["P1", "P2", "P3"].map((p) => { const n = list.filter((i) => i.priority === p).length; return n ? <span key={p}><PriorityBadge p={p} /> ×{n}</span> : null; })}</span>
+                    </summary>
+                    <IssueTable rows={list} nav={nav} />
+                  </details>
+                ))}
+              </>
+            ) : !issues.length ? (
               <div className="empty">{rep.coverage.judged_days ? "No grouped issues yet. Group the new items into issues." : "No LLM-judged days in this period yet."}</div>
             ) : (
               <>
