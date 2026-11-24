@@ -93,6 +93,16 @@ one day of chats ──► rule signals (score) ──► LLM judge (Claude, opt
 - **Export:** Dataset & export → **Generate file** writes `data/exports/bookkr_friction_rag_<time>.jsonl` (also stored in the database, so it can be downloaded from any machine) (one example per line: context, user_message, what_went_wrong, expected_interpretation, guidance, source) and a `.md` with the rules plus readable examples.
 - **Tuning:** weights, thresholds, regexes and the model are in `config/friction.json`, picked up on the next run.
 
+## Ask
+
+The **Ask** page answers plain-English questions about the data (`backend/bookr_analyst/ask.py`):
+
+1. Claude writes one PostgreSQL query from the live table list plus the notes in `ask.py → NOTES` (keep those up to date when tables change).
+2. The query is checked: a single `SELECT`/`WITH`, no writes, no settings or server functions, no schema other than `analyst`. It then runs in a **read-only transaction** with a 20 s timeout and a 500-row cap. If Postgres rejects it, Claude gets the error once to fix it.
+3. Claude explains the rows it got back, using only numbers from the result. The page shows the answer, a chart when it fits, the table and the SQL. Follow-up questions reuse the previous SQL.
+
+Every question is logged in `friction.ask_log` (question, SQL, answer, first 200 rows). It uses the same Claude account as the Friction Finder judge; on Render that means `ANTHROPIC_API_KEY`.
+
 ## Moving an old local store to Postgres
 Earlier versions kept data in local files (`data/analytics.duckdb`, `data/friction.sqlite`). The analytics copy is rebuilt by a sync. To carry over findings, reviews and export files:
 `cd backend; python scripts/migrate_sqlite_to_postgres.py` (reads `data/friction.sqlite`, never changes it; refuses to overwrite a non-empty store unless `--replace` is given).

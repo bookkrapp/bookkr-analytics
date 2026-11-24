@@ -7,7 +7,7 @@ import Funnel from "./pages/Funnel";
 import Ops from "./pages/Ops";
 import Sessions from "./pages/Sessions";
 import SessionDetail from "./pages/SessionDetail";
-import ComingSoon from "./pages/ComingSoon";
+import Ask from "./pages/Ask";
 import Users from "./pages/Users";
 import Friction from "./pages/Friction";
 import FrictionReview from "./pages/FrictionReview";
@@ -75,12 +75,9 @@ export default function App() {
           <NavLink to="/ops">Booking &amp; payment ops</NavLink>
           <NavLink to="/users">Users &amp; retention</NavLink>
           <NavLink to="/conversations">Conversations</NavLink>
+          <NavLink to="/ask">Ask</NavLink>
           <div className="section">Model improvement</div>
           <NavLink to="/friction">Friction Finder</NavLink>
-          <div className="section">Coming next</div>
-          <NavLink to="/ask">
-            Ask <span className="soon">Phase 2</span>
-          </NavLink>
         </nav>
       </aside>
       <div className="main">
@@ -108,7 +105,7 @@ export default function App() {
             <Route path="/ops" element={<Ops />} />
             <Route path="/conversations" element={<Sessions />} />
             <Route path="/conversations/:id" element={<SessionDetail />} />
-            <Route path="/ask" element={<ComingSoon title="Ask" text="Ask questions in plain English; an agent writes and runs the SQL, then explains the result. Planned for Phase 2." />} />
+            <Route path="/ask" element={<Ask />} />
             <Route path="/users" element={<Users />} />
             <Route path="/friction" element={<Friction />} />
             <Route path="/friction/issue/:id" element={<FrictionIssue />} />

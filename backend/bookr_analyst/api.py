@@ -297,6 +297,38 @@ def planning(days: int = 30, exclude_internal: bool = True):
     return {"compare": compare, "steps": funnel_steps, "users": both, "weekly": weekly}
 
 
+# Ask (phase 2) --------------------------------------------------------------
+
+@app.get("/api/ask/status")
+def ask_status():
+    from .friction import judge as J
+    return {"llm_enabled": J.llm_enabled(), "provider": J.provider_label(), "model": J.model_name()}
+
+
+@app.post("/api/ask")
+def ask_question(body: dict):
+    from . import ask as A
+    try:
+        return A.ask(str(body.get("question") or ""), body.get("previous") if isinstance(body.get("previous"), dict) else None)
+    except A.AskError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/ask/history")
+def ask_history(limit: int = Query(30, ge=1, le=200)):
+    from . import ask as A
+    return {"items": A.history(limit)}
+
+
+@app.get("/api/ask/{ask_id}")
+def ask_past(ask_id: int):
+    from . import ask as A
+    out = A.past(ask_id)
+    if not out:
+        raise HTTPException(404, "Not found")
+    return out
+
+
 # Booking & payment ops ------------------------------------------------------
 
 @app.get("/api/ops")

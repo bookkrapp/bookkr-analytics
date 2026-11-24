@@ -53,7 +53,7 @@ Last updated: 2026-11-19
 | 3b | **Three buckets (R8):** technical / intent / agent suggestion, owner and fix lane per item, four export files | ✅ Built 2026-11-19 on test data |
 | 3c | **Priorities (R9):** issue register, P1/P2/P3 by users × severity, day/week/month trends, analyst brief, intent RAG pack, daily automation | ✅ Built 2026-11-20 on production data |
 | 3d | Email the daily / weekly / monthly brief | ⏳ Next |
-| 2 | Ask: text-to-SQL agent | ⏳ Next, after Friction Finder is live on production data |
+| 2 | Ask: text-to-SQL agent | ✅ Built 2026-11-24 (`ask.py`, `/ask` page). Read-only, analyst tables only, logged in `friction.ask_log`. On Render it needs `ANTHROPIC_API_KEY` (the Claude Code login isn't in the container). Save-as-tile: later |
 | 4 | Scheduled reports (Slack/email), incremental sync for production volume | ⏳ Later |
 
 ## 4. Decisions log
