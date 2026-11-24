@@ -5,6 +5,7 @@ Enabled when ANTHROPIC_API_KEY is set (or FRICTION_USE_LLM=on with another Anthr
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -261,6 +262,42 @@ def _extract_json(text: str) -> dict:
     return json.loads(text[start:end + 1])
 
 
+_CLI_DIR = tempfile.mkdtemp(prefix="bookr-judge-")
+
+
+def _run_cli(system: str, user: str, timeout_s: int) -> dict:
+    """One `claude -p` call that carries ONLY our prompt.
+
+    By default each Claude Code call also sends Claude Code's own system prompt, its tool definitions and every
+    MCP server's tools: about 29k tokens per call, measured on 2026-11-25, against ~5.5k for a judge prompt.
+    --system-prompt-file replaces that system prompt, --tools "" drops the built-in tools, --strict-mcp-config
+    (with no --mcp-config) loads no MCP servers and --disable-slash-commands drops skills. That leaves ~1k tokens of
+    overhead. The instructions go in a file because `claude` on Windows is a .cmd with an ~8k-character command
+    line limit; the same file for every chat also lets the instructions be cached between calls.
+    """
+    cfg = config()["llm"]
+    sys_file = os.path.join(_CLI_DIR, f"system-{hashlib.sha1(system.encode()).hexdigest()[:12]}.md")
+    if not os.path.exists(sys_file):
+        with open(sys_file, "w", encoding="utf-8") as f:
+            f.write(system)
+    cmd = [_claude_cli(), "-p", "--output-format", "json", "--model", cfg.get("subscription_model", cfg["model"]),
+           "--max-turns", "1", "--system-prompt-file", sys_file, "--tools", "", "--strict-mcp-config",
+           "--disable-slash-commands"]
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    # empty working dir: no project files, CLAUDE.md or settings get pulled into the context
+    proc = subprocess.run(cmd, input=user, capture_output=True, text=True, encoding="utf-8",
+                          cwd=_CLI_DIR, env=env, timeout=timeout_s)
+    if proc.returncode != 0 and not proc.stdout.strip():
+        raise RuntimeError(f"claude CLI failed ({proc.returncode}): {(proc.stderr or '').strip()[:300]}")
+    try:
+        env_out = json.loads(proc.stdout)
+    except ValueError:
+        raise RuntimeError(f"unexpected claude CLI output: {proc.stdout[:300]!r}")
+    if env_out.get("is_error"):
+        raise RuntimeError(f"claude CLI error: {str(env_out.get('result') or env_out.get('subtype'))[:300]}")
+    return env_out
+
+
 class ClaudeCodeClient:
     """Runs the judge through the Claude Code CLI in print mode, so it uses whatever account Claude Code is
     logged into (e.g. a Claude Pro/Max subscription) instead of an API key. Usage counts against that
@@ -268,26 +305,12 @@ class ClaudeCodeClient:
 
     def __init__(self, cli: str):
         self.cli = cli
-        # empty working dir: no project files, CLAUDE.md or settings get pulled into the judge's context
-        self.cwd = tempfile.mkdtemp(prefix="bookr-judge-")
 
     def judge(self, system: str, user: str) -> dict:
         cfg = config()["llm"]
-        prompt = (f"{system}\n\n## Output\nReply with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\n"
-                  f"{json.dumps(SCHEMA)}\n\n## Conversation to review\n{user}")
-        cmd = [self.cli, "-p", "--output-format", "json", "--model", cfg.get("subscription_model", cfg["model"]),
-               "--max-turns", "1", "--disallowedTools", "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"]
-        env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
-                              cwd=self.cwd, env=env, timeout=int(cfg.get("subscription_timeout_s", 300)))
-        if proc.returncode != 0 and not proc.stdout.strip():
-            raise RuntimeError(f"claude CLI failed ({proc.returncode}): {(proc.stderr or '').strip()[:300]}")
-        try:
-            env_out = json.loads(proc.stdout)
-        except ValueError:
-            raise RuntimeError(f"unexpected claude CLI output: {proc.stdout[:300]!r}")
-        if env_out.get("is_error"):
-            raise RuntimeError(f"claude CLI error: {str(env_out.get('result') or env_out.get('subtype'))[:300]}")
+        system = (f"{system}\n\n## Output\nReply with ONLY a JSON object (no prose, no code fences) matching this JSON Schema:\n"
+                  f"{json.dumps(SCHEMA)}")
+        env_out = _run_cli(system, f"## Conversation to review\n{user}", int(cfg.get("subscription_timeout_s", 300)))
         out = _validate(_extract_json(env_out.get("result") or ""))
         u = env_out.get("usage") or {}
         out["_usage"] = {"input_tokens": int(u.get("input_tokens", 0)) + int(u.get("cache_read_input_tokens", 0))
@@ -302,18 +325,8 @@ def ask_json(prompt: str, max_tokens: int = 16000, timeout_s: int | None = None)
     Goes through the same account as the judge (Claude subscription CLI or API key)."""
     cfg = config()["llm"]
     if provider() == "subscription":
-        cli = _claude_cli()
-        cmd = [cli, "-p", "--output-format", "json", "--model", cfg.get("subscription_model", cfg["model"]),
-               "--max-turns", "1", "--disallowedTools", "Bash,Edit,Write,Read,Glob,Grep,WebFetch,WebSearch,NotebookEdit,Task"]
-        env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
-        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, encoding="utf-8",
-                              cwd=tempfile.mkdtemp(prefix="bookr-analyst-"), env=env,
-                              timeout=timeout_s or max(600, int(cfg.get("subscription_timeout_s", 300))))
-        if proc.returncode != 0 and not proc.stdout.strip():
-            raise RuntimeError(f"claude CLI failed ({proc.returncode}): {(proc.stderr or '').strip()[:300]}")
-        env_out = json.loads(proc.stdout)
-        if env_out.get("is_error"):
-            raise RuntimeError(f"claude CLI error: {str(env_out.get('result') or env_out.get('subtype'))[:300]}")
+        env_out = _run_cli("You are a careful analyst. Follow the instructions in the message and reply with ONLY the JSON object it asks for.",
+                           prompt, timeout_s or max(600, int(cfg.get("subscription_timeout_s", 300))))
         return _extract_json(env_out.get("result") or "")
     if not llm_enabled():
         raise RuntimeError("LLM is not configured")
