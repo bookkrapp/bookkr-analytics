@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useApi } from "../api";
 import { Bars, Card, ErrorBox, Info, Kpi, Loading, Table } from "../components";
 import { fmtDate, fmtINR, fmtNum, shortId } from "../format";
+import { PageHeader, useSub } from "../nav";
 
 const WEEKS = [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -18,21 +19,20 @@ function HeatCell({ v }: { v: number | null | undefined }) {
 }
 
 export default function Users() {
+  const sub = useSub("/users");
   const nav = useNavigate();
   const { data, error, loading } = useApi("/api/users");
-  if (error) return <ErrorBox error={error} />;
-  if (loading && !data) return <Loading />;
+  const head = <PageHeader path="/users" sub={sub} />;
+  if (error) return <>{head}<ErrorBox error={error} /></>;
+  if (loading && !data) return <>{head}<Loading /></>;
   const k = data.kpis, p = data.previous ?? {}, x = data.extra ?? {};
   const heavy = data.top_users.filter((u: any) => u.sessions_all_time >= data.heavy_user_threshold);
   const dayFmt = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
   return (
     <>
-      <div>
-        <h1>Users &amp; retention</h1>
-        <div className="page-sub">Who comes back, how often, and whether returning users behave differently. A user counts as active on a day if they send at least one message.</div>
-      </div>
+      {head}
 
-      {heavy.length > 0 && (
+      {heavy.length > 0 && sub.key !== "retention" && (
         <div className="notice">
           <b>{heavy.length} user{heavy.length > 1 ? "s have" : " has"} {data.heavy_user_threshold}+ chats each</b>{" "}
           ({heavy.map((u: any) => shortId(u.user_id)).join(", ")}). These are probably team or test accounts and they inflate the returning-user numbers.
@@ -40,6 +40,7 @@ export default function Users() {
         </div>
       )}
 
+      {sub.key === "activity" && (<>
       <div className="kpis">
         <Kpi label="Active users" info="u_active" value={fmtNum(k.active_users)} cur={k.active_users} prev={p.active_users} />
         <Kpi label="New users" info="u_new" value={fmtNum(k.new_users)} cur={k.new_users} prev={p.new_users} />
@@ -48,13 +49,6 @@ export default function Users() {
         <Kpi label="Used on 2+ days" info="u_repeat" value={fmtNum(k.repeat_in_period)}
              sub={k.active_users ? `${Math.round((100 * k.repeat_in_period) / k.active_users)}% of active users` : undefined} />
         <Kpi label="Sessions per user" info="u_sessions_per_user" value={x.avg_sessions_per_user ?? "—"} />
-        <Kpi label="Came back within 7 days" info="u_r7" value={x.returned_7d_pct != null ? `${x.returned_7d_pct}%` : "—"}
-             sub={`n = ${x.returned_7d_base ?? 0} users`} />
-        <Kpi label="Came back within 30 days" info="u_r30" value={x.returned_30d_pct != null ? `${x.returned_30d_pct}%` : "—"}
-             sub={`n = ${x.returned_30d_base ?? 0} users`} />
-        <Kpi label="Median days between visits" info="u_gap" value={x.median_days_between_visits ?? "—"} />
-        <Kpi label="Repeat bookers" info="u_repeat_bookers" value={fmtNum(x.repeat_bookers)}
-             sub={`of ${fmtNum(x.booking_users)} users who booked`} />
       </div>
 
       <div className="grid g2">
@@ -68,6 +62,18 @@ export default function Users() {
         <Card title="How many days users were active" info="u_frequency">
           <Bars data={data.frequency} x="bucket" series={[{ key: "users", label: "Users", color: "var(--series-1)" }]} />
         </Card>
+      </div>
+      </>)}
+
+      {sub.key === "retention" && (<>
+      <div className="kpis">
+        <Kpi label="Came back within 7 days" info="u_r7" value={x.returned_7d_pct != null ? `${x.returned_7d_pct}%` : "—"}
+             sub={`n = ${x.returned_7d_base ?? 0} users`} />
+        <Kpi label="Came back within 30 days" info="u_r30" value={x.returned_30d_pct != null ? `${x.returned_30d_pct}%` : "—"}
+             sub={`n = ${x.returned_30d_base ?? 0} users`} />
+        <Kpi label="Median days between visits" info="u_gap" value={x.median_days_between_visits ?? "—"} />
+        <Kpi label="Repeat bookers" info="u_repeat_bookers" value={fmtNum(x.repeat_bookers)}
+             sub={`of ${fmtNum(x.booking_users)} users who booked`} />
       </div>
 
       <Card title="Weekly cohorts" info="u_cohorts" right={<span className="muted small">All-time · % of cohort active N weeks after their first week</span>}>
@@ -90,7 +96,9 @@ export default function Users() {
           </div>
         ) : <span className="muted">No cohorts yet.</span>}
       </Card>
+      </>)}
 
+      {sub.key === "behaviour" && (<>
       <Card title="Behaviour by chat number" info="u_by_session">
         <Table rows={data.by_session_number} cols={[
           { key: "bucket", label: "User's…" },
@@ -126,6 +134,7 @@ export default function Users() {
           Personal details aren't copied into this tool; users are shown by the first 8 characters of their ID.<Info text="The sync keeps only the user ID, whether it's a guest account, and the email domain. Names, emails and phone numbers never leave Neon." />
         </div>
       </Card>
+      </>)}
     </>
   );
 }

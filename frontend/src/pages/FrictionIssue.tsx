@@ -37,7 +37,7 @@ export default function FrictionIssue() {
   return (
     <>
       <div>
-        <div className="small"><Link to="/friction?tab=priorities">← Priorities</Link></div>
+        <div className="small"><Link to="/friction/issues">← Issues by priority</Link></div>
         <h1 style={{ marginTop: 6 }}>{s.title}</h1>
         <div className="page-sub" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <span className="muted">Issue #{s.id}</span>

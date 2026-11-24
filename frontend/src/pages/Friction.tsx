@@ -6,7 +6,8 @@ import { fmtDate, fmtDateTime, fmtNum, fmtUSD } from "../format";
 import {
   BUCKETS, BUCKET_LABEL, BUCKET_SHORT, BucketPill, LANE_LABEL, LanePill, OWNER_LABEL, TYPE_BUCKET, TYPE_LABEL, shortModel,
 } from "../frictionTaxonomy";
-import Priorities from "./FrictionReport";
+import Priorities, { RagPack } from "./FrictionReport";
+import { PageHeader, useSub } from "../nav";
 
 export { TYPE_LABEL };
 
@@ -449,42 +450,26 @@ function Rules({ status }: { status: any }) {
 }
 
 export default function Friction() {
-  const [sp, setSp] = useSearchParams();
-  const tab = sp.get("tab") ?? "priorities";
+  const sub = useSub("/friction");
   const status = useLoad<any>("/api/friction/status");
-  const setTab = (t: string) => { const n = new URLSearchParams(sp); n.set("tab", t); setSp(n, { replace: true }); };
+  const judge = status.data && (
+    <span className={`judge-pill ${status.data.llm_enabled ? "on" : ""}`}
+          title={status.data.llm_enabled ? `${status.data.model} via ${status.data.provider_label}` : "Findings come from rule signals only"}>
+      {status.data.llm_enabled ? `🤖 Claude judge on (${status.data.provider_label})` : "📏 Rules-only on this server"}
+      <Info text={status.data.llm_enabled
+        ? "Chats are read by Claude, which writes the explanation, owner and lesson for each friction item."
+        : "No Claude Code login or ANTHROPIC_API_KEY on this server, so new findings come from rule signals only. Days already judged by Claude (from a laptop with the Claude subscription) keep their Claude findings and show here as usual."} />
+    </span>
+  );
   return (
     <>
-      <div>
-        <h1>Friction Finder</h1>
-        <div className="page-sub">
-          Reads every chat, finds where users struggled, and groups those moments into named issues ranked by how many users they hit.
-          Start with <b>Priorities</b>: it's written for you automatically each day, week and month. The review queue is optional, for checking individual chats.
-        </div>
-      </div>
+      <PageHeader path="/friction" sub={sub} right={judge} />
       {status.error ? <ErrorBox error={status.error} /> : !status.data ? <Loading /> : (
         <>
-          {!status.data.llm_enabled ? (
-            <div className="notice">
-              <b>Rules-only mode.</b> The LLM judge is off. Findings come from rule signals, without written explanations or suggested corrections.
-              To turn it on, either <b>log in to Claude Code with your Claude subscription</b> or add <code>ANTHROPIC_API_KEY</code> to <code>.env</code>, then restart the server.
-              <Info text="Subscription: install Claude Code (the `claude` command), run `claude` once and log in with your Pro/Max account. The judge then runs through it and uses your plan's usage limits; there's no per-token bill. API key: put ANTHROPIC_API_KEY=... in .env; that's billed per token, roughly $0.02–0.05 per chat." />
-            </div>
-          ) : (
-            <div className="notice ok">
-              <b>LLM judge on</b>: {status.data.model} via <b>{status.data.provider_label}</b>.
-              {status.data.provider === "subscription" && <span className="muted"> Uses your Claude plan's usage limits; a large day may take a while or pause at the limit.</span>}
-            </div>
-          )}
-          <div className="tabs" role="tablist">
-            {[["priorities", "Priorities"], ["queue", "Review queue"], ["dataset", "Dataset & export"], ["rules", "Rules"]].map(([k, l]) => (
-              <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
-            ))}
-          </div>
-          {tab === "priorities" && <Priorities />}
-          {tab === "queue" && <Queue status={status.data} onStatus={status.reload} />}
-          {tab === "dataset" && <Dataset />}
-          {tab === "rules" && <Rules status={status.data} />}
+          {(sub.key === "brief" || sub.key === "issues" || sub.key === "patterns") && <Priorities view={sub.key} />}
+          {sub.key === "queue" && <Queue status={status.data} onStatus={status.reload} />}
+          {sub.key === "dataset" && <><RagPack /><Dataset /></>}
+          {sub.key === "rules" && <Rules status={status.data} />}
         </>
       )}
     </>

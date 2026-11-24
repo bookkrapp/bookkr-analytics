@@ -39,7 +39,7 @@ function pretty(s?: string | null) {
 }
 
 export default function FrictionReview() {
-  const { id } = useParams();
+  const { sub: id } = useParams();   // routed as /friction/:sub (a number = a chat in the queue)
   const nav = useNavigate();
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +115,7 @@ export default function FrictionReview() {
       init(out);
       if (submit) {
         if (out.next_pending_id) nav(`/friction/${out.next_pending_id}`);
-        else nav(`/friction?day=${out.day}`);
+        else nav(`/friction/queue?day=${out.day}`);
       } else setMsg({ ok: true, text: "Saved." });
     } catch (e: any) { setMsg({ ok: false, text: e.message }); }
     setSaving(false);
@@ -124,7 +124,7 @@ export default function FrictionReview() {
   return (
     <>
       <div>
-        <Link to={`/friction?day=${data.day}`} className="small">← Review queue · {fmtDate(data.day)}</Link>
+        <Link to={`/friction/queue?day=${data.day}`} className="small">← Review queue · {fmtDate(data.day)}</Link>
         <h1 style={{ marginTop: 6 }}>{data.title || "Untitled chat"}</h1>
         <div className="page-sub" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <span className="chip">{data.flow}</span> <span className="chip">{data.outcome}</span>

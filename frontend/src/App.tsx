@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { getJSON } from "./api";
 import { useFilters } from "./filters";
+import { NAV } from "./nav";
 import Overview from "./pages/Overview";
 import Funnel from "./pages/Funnel";
 import Ops from "./pages/Ops";
@@ -61,8 +62,29 @@ function SyncStatus() {
   );
 }
 
+const OLD_TABS: Record<string, string> = { priorities: "brief" };
+
+/** /funnel → /funnel/conversion, keeping the query string (and mapping old ?tab= links). */
+function FirstSub({ path }: { path: string }) {
+  const loc = useLocation();
+  const sp = new URLSearchParams(loc.search);
+  const s = NAV.find((x) => x.path === path)!;
+  const tab = sp.get("tab") ?? (path === "/friction" && sp.get("day") ? "queue" : null);
+  sp.delete("tab");
+  const want = tab && s.subs.some((x) => x.key === (OLD_TABS[tab] ?? tab)) ? (OLD_TABS[tab] ?? tab) : s.subs[0].key;
+  const qs = sp.toString();
+  return <Navigate to={`${path}/${want}${qs ? `?${qs}` : ""}`} replace />;
+}
+
+/** /friction/brief etc. are sub-pages; /friction/123 is a chat in the review queue. */
+function FrictionOrReview() {
+  const { sub } = useParams();
+  return sub && /^\d+$/.test(sub) ? <FrictionReview /> : <Friction />;
+}
+
 export default function App() {
   const { days, setDays, excludeInternal, setExcludeInternal } = useFilters();
+  const loc = useLocation();
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -70,14 +92,25 @@ export default function App() {
           Bookr Analyst<small>Internal analytics</small>
         </div>
         <nav className="nav">
-          <NavLink to="/overview">Overview</NavLink>
-          <NavLink to="/funnel">Funnel</NavLink>
-          <NavLink to="/ops">Booking &amp; payment ops</NavLink>
-          <NavLink to="/users">Users &amp; retention</NavLink>
-          <NavLink to="/conversations">Conversations</NavLink>
-          <NavLink to="/ask">Ask</NavLink>
-          <div className="section">Model improvement</div>
-          <NavLink to="/friction">Friction Finder</NavLink>
+          {NAV.map((s) => {
+            const open = loc.pathname === s.path || loc.pathname.startsWith(s.path + "/");
+            return (
+              <div key={s.path}>
+                {s.path === "/friction" && <div className="section">Model improvement</div>}
+                <NavLink to={s.path} className={open ? "active" : ""}><span><span aria-hidden className="nav-ico">{s.icon}</span>{s.label}</span></NavLink>
+                {open && s.subs.length > 0 && (
+                  <div className="nav-subs">
+                    {s.subs.map((x, i) => (
+                      <NavLink key={x.key} to={`${s.path}/${x.key}`}
+                               className={({ isActive }) => (isActive || (i === 0 && loc.pathname === s.path) ? "active" : "")}>
+                        {x.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
       </aside>
       <div className="main">
@@ -100,16 +133,19 @@ export default function App() {
         <main className="content">
           <Routes>
             <Route path="/" element={<Navigate to="/overview" replace />} />
-            <Route path="/overview" element={<Overview />} />
-            <Route path="/funnel" element={<Funnel />} />
-            <Route path="/ops" element={<Ops />} />
+            {/* each dashboard opens on its first sub-page; old links like /friction?tab=queue keep working */}
+            {NAV.filter((s) => s.subs.length).map((s) => (
+              <Route key={s.path} path={s.path} element={<FirstSub path={s.path} />} />
+            ))}
+            <Route path="/overview/:sub" element={<Overview />} />
+            <Route path="/funnel/:sub" element={<Funnel />} />
+            <Route path="/ops/:sub" element={<Ops />} />
+            <Route path="/users/:sub" element={<Users />} />
             <Route path="/conversations" element={<Sessions />} />
             <Route path="/conversations/:id" element={<SessionDetail />} />
             <Route path="/ask" element={<Ask />} />
-            <Route path="/users" element={<Users />} />
-            <Route path="/friction" element={<Friction />} />
             <Route path="/friction/issue/:id" element={<FrictionIssue />} />
-            <Route path="/friction/:id" element={<FrictionReview />} />
+            <Route path="/friction/:sub" element={<FrictionOrReview />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </main>

@@ -97,6 +97,28 @@ h3 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: var(--text-secon
 .content { padding: 20px 24px 48px; display: flex; flex-direction: column; gap: 16px; max-width: 1400px; }
 .page-sub { color: var(--text-secondary); margin-top: 4px; }
 
+/* Dashboard header: title, sub-page tabs, what the sub-page answers, which filters apply */
+.page-head { display: flex; flex-direction: column; gap: 10px; }
+.page-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.subtabs a { padding: 8px 14px; color: var(--text-secondary); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
+.subtabs a:hover { color: var(--text-primary); text-decoration: none; background: var(--surface-2); border-radius: 6px 6px 0 0; }
+.subtabs a.on { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 650; }
+.page-q { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+.fchips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fchip { font-size: 12px; padding: 2px 9px; border-radius: 99px; background: var(--accent-wash); color: var(--text-primary); white-space: nowrap; }
+.fchip.muted-chip { background: var(--surface-2); color: var(--text-secondary); }
+.sec-h { margin: 6px 0 -4px; font-size: 14px; color: var(--text-primary); }
+.next-links { font-size: 13px; color: var(--text-secondary); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.judge-pill { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-secondary); display: inline-flex; align-items: center; }
+.judge-pill.on { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--text-primary); }
+.nav-ico { display: inline-block; width: 22px; }
+.nav-subs { display: flex; flex-direction: column; margin: 2px 0 6px 32px; border-left: 1px solid var(--border); }
+.nav .nav-subs a { padding: 5px 10px; font-size: 13px; font-weight: 400; border-radius: 0 6px 6px 0; }
+.nav .nav-subs a.active { background: none; color: var(--text-primary); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+
 /* Controls */
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
 .seg button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; color: var(--text-secondary); font: inherit; }

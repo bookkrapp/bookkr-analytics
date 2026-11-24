@@ -192,7 +192,7 @@ function IssueTable({ rows, nav }: { rows: any[]; nav: (p: string) => void }) {
   );
 }
 
-function RagPack() {
+export function RagPack() {
   const [pv, setPv] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<any>(null);
@@ -235,9 +235,11 @@ function RagPack() {
   );
 }
 
-export default function Priorities() {
+/** Brief, Issues and Patterns sub-pages: one period picker (kept in the URL), three views of the same report. */
+export default function Priorities({ view }: { view: "brief" | "issues" | "patterns" }) {
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
+  const qs = sp.toString() ? `?${sp}` : "";
   const period = sp.get("period") ?? "last7";
   const [periods, setPeriods] = useState<any>(null);
   const [rep, setRep] = useState<any>(null);
@@ -313,6 +315,7 @@ export default function Priorities() {
             </div>
           )}
 
+          {view === "brief" && <>
           <Brief rep={rep} onMade={() => setTick((x) => x + 1)} />
 
           <div className="kpis">
@@ -327,7 +330,12 @@ export default function Priorities() {
             <Kpi label="User–issue hits" value={fmtNum(affectedUsers)} info="f_user_hits"
                  sub={<span>a user hit by 2 issues counts twice</span>} />
           </div>
+          <div className="next-links">
+            Go deeper: <Link to={`/friction/issues${qs}`}>🎯 All issues by priority</Link> · <Link to={`/friction/patterns${qs}`}>🧩 Patterns and trends</Link>
+          </div>
+          </>}
 
+          {view === "issues" && <>
           <Card title="🎯 Issues by priority" info="f_priority" right={
             <div className="seg">
               {[["", "All"], ["technical", "⚙️ Technical"], ["intent", "🧠 Intent"], ["suggestion", "💬 Suggestion"]].map(([k, l]) => (
@@ -361,7 +369,14 @@ export default function Priorities() {
               </>
             )}
           </Card>
+          <div className="muted small">
+            {cur && !cur.complete && "This period isn't over yet; numbers grow as days are added. "}
+            Priority = users hit × average severity (1–3), ranked: top 3 are P1, next 7 are P2, the rest P3. Issues marked Fixed, Won't fix or Not an issue drop out of the ranking unless they come back after the fix date.
+            <Info k="f_priority" />
+          </div>
+          </>}
 
+          {view === "patterns" && <>
           <div className="grid g2">
             <Card title="Where it hurts: product areas" info="f_themes">
               {rep.by_theme.length ? (
@@ -397,13 +412,7 @@ export default function Priorities() {
               </Card>
             </div>
           )}
-
-          <RagPack />
-          <div className="muted small">
-            {cur && !cur.complete && "This period isn't over yet; numbers grow as days are added. "}
-            Priority = users hit × average severity (1–3), ranked: top 3 are P1, next 7 are P2, the rest P3. Issues marked Fixed, Won't fix or Not an issue drop out of the ranking unless they come back after the fix date.
-            <Info k="f_priority" />
-          </div>
+          </>}
         </>
       )}
     </>

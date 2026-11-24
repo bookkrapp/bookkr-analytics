@@ -22,11 +22,7 @@ export default function PlanningVsDirect() {
   const rows = ["planned", "direct", "unclear"].filter((k) => by[k]).map((k) => by[k]);
   return (
     <>
-      <div style={{ marginTop: 8 }}>
-        <h2 style={{ fontSize: 17, margin: 0 }}>🗺️ Trip planning vs 🔎 direct search<Info k="planning_vs_direct" /></h2>
-        <div className="page-sub">Did users ask Bookkr to plan a trip, or go straight to a flight or hotel search? Same date range as above, all journeys.</div>
-      </div>
-
+      <div className="muted small">🗺️ Planned = asked Bookkr to plan a trip · 🔎 Direct = went straight to flights or hotels<Info k="planning_vs_direct" /></div>
       <div className="kpis">
         <Kpi label="Chats that planned a trip" value={fmtNum(planned.sessions)} info="planned_chats"
              sub={<span>{pct(planned.sessions, total)} of chats · {fmtNum(planned.users)} users</span>} />
