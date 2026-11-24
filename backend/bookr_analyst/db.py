@@ -13,6 +13,7 @@ import threading
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
+from urllib.parse import urlsplit
 
 import psycopg
 from psycopg.adapt import Loader
@@ -22,6 +23,8 @@ from .config import settings
 
 ANALYTICS_SCHEMA = "analyst"
 FRICTION_SCHEMA = "friction"
+# Bookkr's production database: Bookr Analyst only ever reads it (sync.py, read-only), never writes to it.
+PROTECTED_DATABASES = {"bookkrdb"}
 
 
 class _NumberLoader(Loader):
@@ -45,11 +48,31 @@ def configure(pg: psycopg.Connection) -> None:
     pg.adapters.register_loader("jsonb", _TextLoader)
 
 
+def _db_identity(url: str) -> tuple[str, str] | None:
+    """(endpoint host without Neon's -pooler suffix, database name), or None if the URL can't be read."""
+    try:
+        u = urlsplit(url)
+    except ValueError:
+        return None
+    if not u.hostname:
+        return None
+    return u.hostname.lower().replace("-pooler.", "."), (u.path.lstrip("/") or "postgres").lower()
+
+
 def database_url() -> str:
-    if not settings.analyst_database_url:
+    url = settings.analyst_database_url
+    if not url:
         raise RuntimeError("ANALYST_DATABASE_URL is not set. Point it at the Neon database that stores "
                            "Bookr Analyst's own data (see .env.example).")
-    return settings.analyst_database_url
+    ours = _db_identity(url)
+    if ours is None:
+        raise RuntimeError("ANALYST_DATABASE_URL is not a valid postgresql://user:password@host/database URL.")
+    # Never write into Bookkr's own database: the sync and the Friction Finder create schemas and tables here.
+    src = _db_identity(settings.source_database_url) if settings.source_database_url else None
+    if ours == src or ours[1] in PROTECTED_DATABASES:
+        raise RuntimeError(f"ANALYST_DATABASE_URL points at Bookkr's production database ({ours[1]}). Bookr Analyst "
+                           "must use its own database; refusing to connect.")
+    return url
 
 
 def open_connection() -> psycopg.Connection:

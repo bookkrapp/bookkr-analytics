@@ -16,6 +16,9 @@ explicit confirmation in this conversation.** Every URL in `.env` is real data.
 - `SOURCE_DATABASE_URL` is the live Bookkr database. It is only ever read, inside
   the read-only transaction in `backend/bookr_analyst/sync.py`. Never run DDL or
   DML against it, with any tool.
+- `ANALYST_DATABASE_URL` must never be Bookkr's database (`bookkrdb`). `db.py`
+  refuses to connect if it matches `SOURCE_DATABASE_URL` or a name in
+  `PROTECTED_DATABASES`.
 - `ANALYST_DATABASE_URL` is one Neon database shared by every laptop and the
   deployed app. Its `friction` schema holds human reviews that cannot be
   regenerated. Ask before running `python -m bookr_analyst.friction --reset`,
