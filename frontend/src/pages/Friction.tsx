@@ -379,9 +379,37 @@ function Dataset() {
   );
 }
 
+function JudgeSees() {
+  const p = useLoad<any>("/api/friction/judge-prompt");
+  if (p.error) return <ErrorBox error={p.error} />;
+  if (!p.data) return <Loading />;
+  const d = p.data;
+  return (
+    <Card title="🤖 What the judge sees">
+      <div className="small" style={{ lineHeight: 1.6 }}>
+        For every chat with a rule signal, {d.model} ({d.provider}) gets:
+        <ol style={{ margin: "6px 0", paddingLeft: 18 }}>
+          <li><b>Instructions</b> (same for every chat, so they're cached): about {fmtNum(d.instructions_tokens)} tokens, plus a{" "}
+            {fmtNum(d.output_schema_tokens)}-token output format. They cover the three buckets, how a Bookkr turn works and who owns what,
+            rules R1 and R10, the friction types and owners, {d.known_false_positives} reviewer-marked false positives
+            {d.architecture_file ? ", and Bookkr's pipeline from its code" : ""}.</li>
+          {d.per_chat.map((x: string, i: number) => <li key={i}>{x}</li>)}
+        </ol>
+        <b>Not given:</b> {d.not_given.join("; ")}. Code-level causes are left to the Claude that has the code, through the Code-agent export.
+        {!d.architecture_file && <div className="muted">config/bookkr_architecture.md isn't there yet, so no code notes are attached.</div>}
+      </div>
+      <details>
+        <summary>Show the full instructions</summary>
+        <pre className="json" style={{ maxHeight: 420 }}>{d.instructions}</pre>
+      </details>
+    </Card>
+  );
+}
+
 function Rules({ status }: { status: any }) {
   return (
     <>
+      <JudgeSees />
       <Card title="Mandatory fields (rule R1)">
         <p style={{ marginTop: 0 }}>Bookkr has to collect these before it can move on. When the assistant <b>asks</b> for one of them, even a second time, the
           finder <b>does not</b> count it as friction. When the <b>user has to repeat</b> a value they had already given, that <b>is</b> flagged as

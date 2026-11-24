@@ -370,6 +370,34 @@ def report(period: str = "week", start: str | None = None, journey: str | None =
     return rep
 
 
+@router.get("/judge-prompt")
+def judge_prompt():
+    """Exactly what the judge is given, for the Rules page: its instructions and what is added per chat."""
+    with conn() as c:
+        n = fconfig()["llm"].get("max_known_false_positives_in_prompt", 25)
+        fps = [dict(r) for r in c.execute("""SELECT type, what_went_wrong, review_note FROM items WHERE verdict = 'not_friction'
+                                            ORDER BY reviewed_at DESC NULLS LAST LIMIT ?""", (n,)).fetchall()]
+    system = J.build_system(fps)
+    arch = J._arch()
+    return {
+        "model": J.model_name(), "provider": J.provider_label(),
+        "instructions": system, "instructions_tokens": len(system) // 4,
+        "output_schema_tokens": len(json.dumps(J.SCHEMA)) // 4,
+        "known_false_positives": len(fps),
+        "architecture_file": bool(arch), "architecture_sections": sorted(arch),
+        "per_chat": [
+            "Chat facts: start time (IST), flow, furthest funnel stage, app platform and version",
+            "Rule-based hints: every signal the rules found, with its bucket, owner, turns and detail",
+            f"Code notes: up to {J.ARCH_PER_CHAT} sections of config/bookkr_architecture.md for the components the hints, failed LLM calls and flow point at",
+            "The numbered transcript: every message (PII-masked), card summaries, and under each turn the stored intents, "
+            "flight/hotel searches with result counts, failed LLM calls, app events (payment, fare, price, unsupported feature, "
+            "zero results, filter/sort use), failed bookings and thumbs up/down",
+        ],
+        "not_given": ["Bookkr's source code itself", "Other chats of the same user", "Raw LLM prompts/responses inside Bookkr",
+                      "Provider API responses (only counts and failure reasons)"],
+    }
+
+
 @router.get("/investigation/preview")
 def investigation_preview(journey: str | None = None):
     from .friction import investigation as INV

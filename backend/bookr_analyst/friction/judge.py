@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import tempfile
 
-from ..config import settings
+from ..config import PROJECT_ROOT, settings
 from . import taxonomy as TX
 from .signals import config
 
@@ -122,17 +122,21 @@ Your job: find FRICTION — moments where the user lost time or effort — and s
 - suggestion: Bookkr understood correctly, but what it OFFERED was poor: results ranked against a stated preference, an unrealistic plan, a wrong or ungrounded answer, irrelevant reply chips, odd airport/date options, or a request Bookkr can't serve (product gap).
 Ask in this order and stop at the first yes: did something break (technical)? was the user's meaning captured wrong (intent)? was the offer poor (suggestion)? A broken provider can look like a misunderstanding, so check technical first.
 
-## How a Bookkr turn works (to find the owner)
-1. A hotel card still open may claim the turn (hotel extractor `turnScope`, an LLM). Cab/bus/train/activity requests get a fixed "coming soon" reply.
-2. `unified_chat_route` (LLM) picks the flow: flights, trip plans, general question.
-3. `unified_intent_extraction` (LLM: a fine-tuned Qwen/Nemotron LoRA, with gpt-4.1-mini as fallback) writes the travel intent. The transcript's "EXTRACTED INTENT" lines show what was stored.
-4. FIXED RULES then change it: past dates move forward, the exact-window rule, mixed round trips, airport choice (date_policy, airport_choice); the ask / confirm / search decision and the follow-up question wording (action_decider); search params (search_builder).
-5. Providers search (flight_provider / hotel_provider), the ranking engine orders results (ranking), LLMs write the reply (generate_response), plans (multi_city_intent), web answers (web_search) and reply chips (nudge_recommendation).
-Owner = the FIRST component that went wrong. Compare three things: what the user said, the EXTRACTED INTENT lines, and the FLIGHT/HOTEL SEARCH line. User words wrong in the intent → the extractor (or router) owns it. Intent right but the search differs → a fixed rule owns it (search_builder / date_policy / airport_choice). Search right but the offer was poor → the ranker or the LLM that wrote it. Use "unknown" when you can't tell; never guess an LLM owner.
+## How a Bookkr turn works (to find the owner; from Bookkr's code, UAT snapshot of 19 Nov)
+1. A hotel card still open may claim the turn (hotel extractor `turnScope`, an LLM). Cab/bus/train/activity requests get a fixed "coming soon" reply once a turn lands in general assistance.
+2. `unified_intent_extraction` (LLM: a fine-tuned Qwen/Nemotron LoRA, gpt-4.1-mini as fallback) writes the travel intent, including an `actionHint` (search flight / plan / hotel / undecided…). The "EXTRACTED INTENT (travel_intent …)" lines show what was stored. The separate router LLM (`unified_chat_route`) is switched off on the normal path.
+3. FIXED RULES decide what the turn does: `mergeActionHint` revives the PREVIOUS turn's hint when this turn's is undecided or a confirm/summary/reject (so an old hotel or plan hint can steer a vague turn); `ActionDecider` picks ask / confirm / search / plans (plans win over flights when trip length, companions or interests are set) and writes the fixed-template asks for missing slots (action_decider); with plans on screen, plan turn rules 1-8 decide and only rule 9 hands over to the plan LLM (plan_turn_rules). Then date rules (date_policy), airport choice (airport_choice) and search params (search_builder).
+4. For flights, a SECOND LLM call (`intent_extraction_thread`, owner unified_intent_extraction) re-reads the message on top of the stored entities and writes the "EXTRACTED INTENT (flight_search …)" line. The app itself fires the search after the intent is ready.
+5. Providers search (flight_provider / hotel_provider), ranking orders results (ranking), LLMs write the reply (generate_response), plans (multi_city_intent), web answers (web_search) and reply chips (nudge_recommendation).
+Owner = the FIRST component that went wrong. Compare: what the user said, the EXTRACTED INTENT lines, and the FLIGHT/HOTEL SEARCH line. User words wrong in the travel_intent line → unified_intent_extraction. Intent right but the turn did the wrong thing → a fixed rule (action_decider, plan_turn_rules, date_policy, airport_choice, search_builder). Search right but the offer was poor → ranking or the LLM that wrote it. Use "unknown" when you can't tell; never guess an LLM owner.
 
-Two traps that are NOT LLM mistakes:
-- A flight turn usually stores TWO intent lines: "EXTRACTED INTENT (travel_intent …)" from the unified extractor, then "EXTRACTED INTENT (flight_search …)" re-built from the previous intent carried in Redis / the DB. If the travel_intent line has the user's value and the flight_search line has a different one (a city swapped for BLR, origin and destination reversed), the owner is `flight_state_carryover`, not `unified_intent_extraction`. Only blame the extractor when the travel_intent line itself is wrong.
-- While trip plans are on screen, fixed turn rules decide what a turn does: a flights request that also changes the dates, origin, travellers or destination regenerates the plans instead of searching flights. If a "show me flights" turn returns plans, the owner is `plan_turn_rules`, not `unified_chat_route`, unless no plans were on screen.
+Traps:
+- WRONG FLOW is almost never the router. Blame `unified_intent_extraction` only if this turn's actionHint was wrong for what the user wrote; if a vague turn followed an older hint, or a complete flight request turned into plans, the owner is `action_decider`; with plans on screen, `plan_turn_rules`. Don't use `unified_chat_route` unless the transcript shows a routing call.
+- travel_intent line right but the flight_search line different (city swapped, route reversed): if the flight_search value repeats something from an EARLIER turn, the owner is `flight_state_carryover`; otherwise the second extractor re-read it wrong: `unified_intent_extraction`.
+- LLM-call failures are NOT linked to chats in Bookkr's logs, so a missing "LLM CALL FAILED" line proves nothing. The reply "Temporary issue on our side. Please retry." is an extractor failure the user saw (technical, llm_call_failure); "I could not build trip plan options just now" is a planner failure. Most other LLM failures fall back silently.
+- Provider failure vs no availability: all providers failed = search with "no result stored" plus "Search service is temporarily unavailable" (technical, provider_failure). A stored result with 0 options and "No fares came back" = genuine no availability (not friction unless the route is common and the dates are normal). Student / Senior searches use one provider only, so fewer results are expected. An intent-ready turn with no search line after it is the app not firing the search (technical, client_delivery).
+- Ranking only orders results: a budget is a soft preference, never a filter, and "non-stop" is a search parameter. "Results over budget" is not a ranking bug; "non-stop request showed stops" is search_builder or the provider.
+- Reply chips are not stored, so irrelevant_chips can only be judged from a chip the user tapped.
 
 One item per root cause. When one mistake causes several moments (a wrong search, then the user restating the cities, then a second wrong search), write ONE item for the first wrong decision and put every affected turn in `turns`. Separate items only when the causes differ.
 
@@ -175,7 +179,65 @@ Write [name] instead of any personal name. If there is no friction, return has_f
 
 ## Known false positives (reviewers marked these "not friction" — do not report similar cases)
 {fp_txt}
-"""
+{_arch_always()}"""
+
+
+def _arch_always() -> str:
+    s = _arch()
+    parts = [f"### {k}\n{s[k][:2400]}" for k in ARCH_ALWAYS if s.get(k)]
+    return ("\n## Bookkr's pipeline, from its code (more detail per component may be attached to a chat)\n" + "\n\n".join(parts)
+            + "\n") if parts else ""
+
+
+# Architecture context (TRACKER R13) ------------------------------------------------------------------------------
+# config/bookkr_architecture.md, written from Bookkr's code, split by `## key`. Retrieval is by key, not by embeddings:
+# the pipeline overview goes in the (cached) instructions; a chat gets the sections of the components its signals,
+# failed LLM calls and flow point at. No vector database, no embedding calls, so it costs nothing beyond the tokens.
+ARCH_FILE = PROJECT_ROOT / "config" / "bookkr_architecture.md"
+ARCH_ALWAYS = ("overview", "flows")
+ARCH_PER_CHAT = 3
+ARCH_SECTION_CHARS = 1400
+FLOW_OWNERS = {"multi_city": ["multi_city_intent", "plan_turn_rules"], "unresolved": ["unified_chat_route"]}
+
+
+def _arch() -> dict[str, str]:
+    if not ARCH_FILE.is_file():
+        return {}
+    out, key, buf = {}, None, []
+    for line in ARCH_FILE.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^##\s+([A-Za-z0-9_]+)\s*$", line)
+        if m:
+            if key:
+                out[key] = "\n".join(buf).strip()
+            key, buf = m.group(1), []
+        elif key:
+            buf.append(line)
+    if key:
+        out[key] = "\n".join(buf).strip()
+    return out
+
+
+def _arch_for_chat(signals: list[dict], facts: dict, transcript_text: str) -> str:
+    sections = _arch()
+    if not sections:
+        return ""
+    want: list[str] = []
+    for s in sorted(signals, key=lambda s: -(s.get("weight") or 0)):
+        o = s.get("owner")
+        if o and o not in ("unknown", "product") and o not in want:
+            want.append(o)
+    for task in re.findall(r"LLM CALL FAILED: (\w+)", transcript_text):
+        o = TX.TASK_OWNER.get(task)
+        if o and o not in want:
+            want.append(o)
+    for o in FLOW_OWNERS.get(facts.get("current_flow") or "", []):
+        if o not in want:
+            want.append(o)
+    picked = [k for k in want if k in sections][:ARCH_PER_CHAT]
+    if not picked:
+        return ""
+    body = "\n\n".join(f"### {k} ({TX.OWNER_LABEL.get(k, k)})\n{sections[k][:ARCH_SECTION_CHARS]}" for k in picked)
+    return f"Notes from Bookkr's code on the components this chat touches (use them to pick the owner):\n{body}\n\n"
 
 
 def _user_prompt(transcript_text: str, signals: list[dict], facts: dict) -> str:
@@ -185,6 +247,7 @@ def _user_prompt(transcript_text: str, signals: list[dict], facts: dict) -> str:
     return (f"Chat started {facts.get('created_local')} IST · flow={facts.get('current_flow')} · furthest stage={facts.get('stage')}{client}\n\n"
             f"Rule-based hints (may be wrong; weight-0 hints such as 'expected_ask' (R1), 'no_availability', "
             f"'llm_failure_recovered' and 'fare_category_picked' are context, NOT friction on their own):\n{hints}\n\n"
+            f"{_arch_for_chat(signals, facts, transcript_text)}"
             f"Conversation:\n{transcript_text}")
 
 
