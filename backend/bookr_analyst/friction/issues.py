@@ -18,6 +18,7 @@ import traceback
 from datetime import date, datetime, timedelta, timezone
 
 from ..config import settings
+from ..db import ANALYTICS_SCHEMA
 from . import judge as J
 from . import taxonomy as TX
 from .store import all_dicts, as_dict, conn, now_iso, save_export_file
@@ -278,19 +279,20 @@ def periods() -> dict:
     return out
 
 
-def _baseline(start: date, end: date) -> dict:
+def _baseline(start: date, end: date, journey: str | None = None) -> dict:
     """All chats in the period (same day rule as the finder) and how many booked: the yardstick for impact."""
     try:
         from ..db import connect, rows
         with connect() as con:
-            r = rows(con, """
+            r = rows(con, f"""
                 WITH s AS (SELECT m.chat_session_id, CAST(max(m.created_local) AS DATE) AS day
                            FROM messages m JOIN session_facts sf ON sf.session_id = m.chat_session_id
                            WHERE m.role = 'USER' AND NOT sf.is_internal GROUP BY 1)
                 SELECT count(*) AS chats, count(DISTINCT sf.user_id) AS users,
                        count(*) FILTER (WHERE sf.n_booked > 0) AS booked
                 FROM s JOIN session_facts sf ON sf.session_id = s.chat_session_id
-                WHERE s.day BETWEEN $s AND $e""", {"s": start, "e": end})
+                WHERE s.day BETWEEN $s AND $e {'AND sf.journey_type = $j' if journey else ''}""",
+                     {"s": start, "e": end, "j": journey})
         b = r[0] if r else {}
     except Exception:  # noqa: BLE001
         b = {}
@@ -307,40 +309,55 @@ ISSUE_STATS = """
            count(DISTINCT CASE WHEN f.outcome = 'Booked' THEN i.session_id END) AS booked_chats,
            min(f.day) AS first_day, max(f.day) AS last_day
     FROM items i JOIN findings f ON f.id = i.finding_id
-    WHERE i.issue_id IS NOT NULL AND i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ?
+    WHERE i.issue_id IS NOT NULL AND i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? {jf}
     GROUP BY 1"""
 
+JOURNEYS = ("one_way", "round_trip", "flight_hotel", "hotel", "trip_plan", "unclear")
 
-def period_report(period: str, anchor: date) -> dict:
+
+def journey_filter(journey: str | None, alias: str = "i") -> tuple[str, list]:
+    """SQL (and its parameter) keeping only items from chats of one journey type. The journey lives in the analytics
+    copy (analyst.session_facts), in the same database as the friction schema."""
+    if not journey:
+        return "", []
+    if journey not in JOURNEYS:
+        raise ValueError(f"journey must be one of {', '.join(JOURNEYS)}")
+    return (f"AND {alias}.session_id IN (SELECT session_id FROM {ANALYTICS_SCHEMA}.session_facts WHERE journey_type = ?)",
+            [journey])
+
+
+def period_report(period: str, anchor: date, journey: str | None = None) -> dict:
     start, end = bounds(period, anchor)
     pstart, pend = previous(period, start)
     s, e, ps, pe = (x.isoformat() for x in (start, end, pstart, pend))
+    jf, jp = journey_filter(journey)
     with conn() as c:
-        cur = {r["id"]: dict(r) for r in c.execute(ISSUE_STATS, (s, e))}
-        prev = {r["id"]: dict(r) for r in c.execute(ISSUE_STATS, (ps, pe))}
+        cur = {r["id"]: dict(r) for r in c.execute(ISSUE_STATS.format(jf=jf), (s, e, *jp))}
+        prev = {r["id"]: dict(r) for r in c.execute(ISSUE_STATS.format(jf=jf), (ps, pe, *jp))}
         ids = set(cur) | set(prev)
         meta = {r["id"]: dict(r) for r in c.execute(
             f"SELECT * FROM issues WHERE id IN ({','.join('?' * len(ids))})", list(ids))} if ids else {}
-        daily = [dict(r) for r in c.execute("""
+        daily = [dict(r) for r in c.execute(f"""
             SELECT f.day, i.issue_id, count(DISTINCT i.session_id) AS chats
             FROM items i JOIN findings f ON f.id = i.finding_id
-            WHERE i.issue_id IS NOT NULL AND i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? GROUP BY 1, 2""", (s, e))]
+            WHERE i.issue_id IS NOT NULL AND i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? {jf} GROUP BY 1, 2""",
+            (s, e, *jp))]
         runs = [dict(r) for r in c.execute("""
             SELECT day, mode, sessions_scanned, sessions_judged, sessions_flagged FROM runs
             WHERE id IN (SELECT max(id) FROM runs WHERE status = 'done' GROUP BY day) AND day BETWEEN ? AND ?""", (s, e))]
         # every item (rules + LLM) by bucket and type: the "what kind of friction" view
-        types = [dict(r) for r in c.execute("""
+        types = [dict(r) for r in c.execute(f"""
             SELECT i.bucket, i.type, i.source, count(*) AS items, count(DISTINCT i.session_id) AS chats
             FROM items i JOIN findings f ON f.id = i.finding_id
-            WHERE i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? GROUP BY 1, 2, 3""", (s, e))]
-        prev_types = {(r["bucket"], r["type"]): r["chats"] for r in c.execute("""
+            WHERE i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? {jf} GROUP BY 1, 2, 3""", (s, e, *jp))]
+        prev_types = {(r["bucket"], r["type"]): r["chats"] for r in c.execute(f"""
             SELECT i.bucket, i.type, count(DISTINCT i.session_id) AS chats
             FROM items i JOIN findings f ON f.id = i.finding_id
-            WHERE i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? GROUP BY 1, 2""", (ps, pe))}
-        unassigned = c.execute("""SELECT count(*) FROM items i JOIN findings f ON f.id = i.finding_id
+            WHERE i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? {jf} GROUP BY 1, 2""", (ps, pe, *jp))}
+        unassigned = c.execute(f"""SELECT count(*) FROM items i JOIN findings f ON f.id = i.finding_id
                                   WHERE i.source = 'llm' AND i.issue_id IS NULL AND i.verdict <> 'not_friction'
-                                    AND f.day BETWEEN ? AND ?""", (s, e)).fetchone()[0]
-    base = _baseline(start, end)
+                                    AND f.day BETWEEN ? AND ? {jf}""", (s, e, *jp)).fetchone()[0]
+    base = _baseline(start, end, journey)
     judged_chats = sum(r["sessions_scanned"] or 0 for r in runs if r["mode"] == "llm")   # every chat on judged days
     read_by_judge = sum(r["sessions_judged"] or 0 for r in runs if r["mode"] == "llm")   # had a signal, so the judge read it
 
@@ -383,9 +400,9 @@ def period_report(period: str, anchor: date) -> dict:
         if i["bucket"] in by_bucket:
             by_bucket[i["bucket"]]["issues"] += 1
     with conn() as c:
-        for r in c.execute("""SELECT i.bucket, count(DISTINCT i.session_id) FROM items i JOIN findings f ON f.id = i.finding_id
-                              WHERE i.issue_id IS NOT NULL AND i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ?
-                              GROUP BY 1""", (s, e)):
+        for r in c.execute(f"""SELECT i.bucket, count(DISTINCT i.session_id) FROM items i JOIN findings f ON f.id = i.finding_id
+                              WHERE i.issue_id IS NOT NULL AND i.verdict <> 'not_friction' AND f.day BETWEEN ? AND ? {jf}
+                              GROUP BY 1""", (s, e, *jp)):
             if r[0] in by_bucket:
                 by_bucket[r[0]]["chats"] = r[1]
     themes: dict[str, dict] = {}

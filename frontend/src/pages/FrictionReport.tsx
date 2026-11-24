@@ -250,14 +250,16 @@ export default function Priorities({ view }: { view: "brief" | "issues" | "patte
   const list: any[] = periods?.[period] ?? [];
   const start = sp.get("start") ?? list[0]?.start;
   const [shown, setShown] = useState("");
+  // the written brief and its KPIs cover all journeys; Issues and Patterns follow the journey filter
+  const journey = view === "brief" ? "" : sp.get("journey") ?? "";
   useEffect(() => {
     if (!start) return;
-    const key = `${period}:${start}`;
+    const key = `${period}:${start}:${journey}`;
     if (key !== shown) setRep(null);   // new period: show the spinner; same period: refresh in place
-    getJSON<any>(`/api/friction/report?period=${period}&start=${start}`)
+    getJSON<any>(`/api/friction/report?period=${period}&start=${start}${journey ? `&journey=${journey}` : ""}`)
       .then((d) => { setRep(d); setShown(key); }).catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period, start, tick]);
+  }, [period, start, tick, journey]);
   // keep the page current while new days are judged and grouped: every minute, and when the tab comes back into view
   useEffect(() => {
     const bump = () => setTick((x) => x + 1);

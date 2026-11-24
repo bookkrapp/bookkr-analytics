@@ -8,6 +8,7 @@ import {
 } from "../frictionTaxonomy";
 import Priorities, { RagPack } from "./FrictionReport";
 import { PageHeader, useSub } from "../nav";
+import JourneyPick, { useJourney } from "../JourneyPick";
 
 export { TYPE_LABEL };
 
@@ -112,6 +113,7 @@ function Queue({ status, onStatus }: { status: any; onStatus: () => void }) {
   const type = sp.get("type") ?? "";
   const bucket = sp.get("bucket") ?? "";
   const lane = sp.get("lane") ?? "";
+  const journey = sp.get("journey") ?? "";
   const set = (k: string, v: string) => {
     const n = new URLSearchParams(sp);
     v ? n.set(k, v) : n.delete(k);
@@ -120,6 +122,7 @@ function Queue({ status, onStatus }: { status: any; onStatus: () => void }) {
   };
   const qs = new URLSearchParams({
     day, ...(st ? { status: st } : {}), ...(type ? { type } : {}), ...(bucket ? { bucket } : {}), ...(lane ? { lane } : {}),
+    ...(journey ? { journey } : {}),
   }).toString();
   const list = useLoad<any[]>(day ? `/api/friction/findings?${qs}` : null);
   const sum = useLoad<any>(day ? `/api/friction/summary?day=${day}` : null);
@@ -461,9 +464,12 @@ export default function Friction() {
         : "No Claude Code login or ANTHROPIC_API_KEY on this server, so new findings come from rule signals only. Days already judged by Claude (from a laptop with the Claude subscription) keep their Claude findings and show here as usual."} />
     </span>
   );
+  const [journey, setJourney] = useJourney(!!sub.applies.journey);
   return (
     <>
-      <PageHeader path="/friction" sub={sub} right={judge} />
+      <PageHeader path="/friction" sub={sub} right={judge}>
+        {sub.applies.journey && <JourneyPick journey={journey} set={setJourney} />}
+      </PageHeader>
       {status.error ? <ErrorBox error={status.error} /> : !status.data ? <Loading /> : (
         <>
           {(sub.key === "brief" || sub.key === "issues" || sub.key === "patterns") && <Priorities view={sub.key} />}

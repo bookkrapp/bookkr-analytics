@@ -47,9 +47,9 @@ export const NAV: Section[] = [
   {
     path: "/friction", label: "Friction Finder", icon: "🔍", subs: [
       { key: "brief", label: "Brief", icon: "📋", question: "What hurt users most in this period, and what should we fix first?", applies: { period: true } },
-      { key: "issues", label: "Issues", icon: "🎯", question: "Which named issues hit the most users, ranked P1 to P3?", applies: { period: true } },
-      { key: "patterns", label: "Patterns", icon: "🧩", question: "Which product areas and kinds of friction are growing or shrinking?", applies: { period: true } },
-      { key: "queue", label: "Review queue", icon: "✅", question: "Check individual chats the finder flagged on a day: agree, not friction, or skip.", applies: {} },
+      { key: "issues", label: "Issues", icon: "🎯", question: "Which named issues hit the most users, ranked P1 to P3?", applies: { period: true, journey: true } },
+      { key: "patterns", label: "Patterns", icon: "🧩", question: "Which product areas and kinds of friction are growing or shrinking?", applies: { period: true, journey: true } },
+      { key: "queue", label: "Review queue", icon: "✅", question: "Check individual chats the finder flagged on a day: agree, not friction, or skip.", applies: { journey: true } },
       { key: "dataset", label: "Dataset & export", icon: "📦", question: "Which files go to RAG, prompts, fine-tuning and engineering?", applies: {} },
       { key: "rules", label: "Rules", icon: "📐", question: "How the finder decides what counts as friction.", applies: {} },
     ],

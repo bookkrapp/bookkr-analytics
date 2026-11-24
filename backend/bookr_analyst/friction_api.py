@@ -114,8 +114,15 @@ FINDING_LIST = """
 
 @router.get("/findings")
 def findings(day: str | None = None, status: str | None = None, type: str | None = None,
-             bucket: str | None = None, lane: str | None = None):
+             bucket: str | None = None, lane: str | None = None, journey: str | None = None):
     where, p = ["1=1"], []
+    if journey:
+        try:
+            jf, jp = IS.journey_filter(journey, "f")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        where.append(jf.removeprefix("AND "))
+        p += jp
     if day:
         where.append("f.day = ?")
         p.append(day)
@@ -351,9 +358,13 @@ def list_periods():
 
 
 @router.get("/report")
-def report(period: str = "week", start: str | None = None):
-    rep = IS.period_report(period, _anchor(start, period))
-    rep["brief"] = IS.latest_brief(period, rep["start"])
+def report(period: str = "week", start: str | None = None, journey: str | None = None):
+    try:
+        rep = IS.period_report(period, _anchor(start, period), journey)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    rep["journey"] = journey
+    rep["brief"] = IS.latest_brief(period, rep["start"])   # the brief covers all journeys
     rep["grouping"] = IS.state()
     rep["llm_enabled"] = J.llm_enabled()
     return rep

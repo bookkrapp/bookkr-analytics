@@ -1,35 +1,19 @@
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useApi } from "../api";
 import { Bars, Card, ErrorBox, Info, Kpi, Loading, Table, TimeLines } from "../components";
 import { fmtNum } from "../format";
-import { JOURNEYS, JOURNEY_LABEL } from "../journeys";
+import JourneyPick, { useJourney } from "../JourneyPick";
+import { JOURNEY_LABEL } from "../journeys";
 import { PageHeader, useSub } from "../nav";
 import PlanningVsDirect from "./PlanningVsDirect";
 
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(1)}%` : "—");
 
-/** The journey filter: lives in the URL (?journey=) so it stays set when moving between Conversion and Speed & effort. */
-function JourneyPick({ journey, set }: { journey: string; set: (j: string) => void }) {
-  return (
-    <div className="journey-pick" role="group" aria-label="Journey">
-      <span className="muted small">Journey:</span>
-      {[{ v: "", label: "All journeys", icon: "🌐" }, ...JOURNEYS].map((j) => (
-        <button key={j.v} className={journey === j.v ? "on" : ""} onClick={() => set(j.v)}>
-          <span aria-hidden>{j.icon}</span> {j.label}
-        </button>
-      ))}
-      <Info k="journey" />
-    </div>
-  );
-}
-
 export default function Funnel() {
   const sub = useSub("/funnel");
   const nav = useNavigate();
-  const [sp, setSp] = useSearchParams();
   const filtered = sub.applies.journey;
-  const journey = filtered ? sp.get("journey") ?? "" : "";
-  const setJourney = (j: string) => { const n = new URLSearchParams(sp); j ? n.set("journey", j) : n.delete("journey"); setSp(n, { replace: true }); };
+  const [journey, setJourney] = useJourney(filtered);
   const head = <PageHeader path="/funnel" sub={sub}>{filtered && <JourneyPick journey={journey} set={setJourney} />}</PageHeader>;
   const { data, error, loading } = useApi("/api/funnel", { journey: journey || undefined });
   if (sub.key === "planning") return <>{head}<PlanningVsDirect /></>;
