@@ -79,6 +79,15 @@ Last updated: 2026-11-19
 
 ## 6. Session log
 
+- **2026-11-24:** Five features, one commit each on `main` (each can be reverted on its own):
+  1. `1a7b7f8` Funnel filter by **journey type** (one-way, round trip, flight + hotel, hotel, trip planning, not clear yet); Conversations filters by it too.
+  2. `6b6c579` **Trip planning vs direct search** on the Funnel page. On the 20 Nov snapshot: 600 planning chats (9%), 581 saw plan ideas, 293 picked dates, 142 searched, 2 tried to book, **0 booked**; direct searches book at 5.2%.
+  3. `8423b10` **R10:** the student / senior fare is the user's own pick on the confirmation card, so it's no longer reported as the extractor inventing it (the top production issue was this false positive).
+  4. `60fe3ef` **Priorities page redesign:** brief with headline banner, "Fix first" table, coloured boxes; P1 issue cards, P2 table, P3 folded.
+  5. `2ec1091` **Ask** (phase 2): plain-English questions → read-only SQL → answer, chart, table.
+  - After deploy: press **Refresh data** once (new `session_facts` columns), and set `ANTHROPIC_API_KEY` on Render for Ask and the judge.
+  - Tested locally against the 20 Nov production snapshot in a private Postgres; not tested on Render. The Docker build was not run (Docker isn't installed on this laptop).
+
 - **2026-11-20 (2):** Built **Priorities** (R9) so the team reads a ranked list instead of reviewing chats.
   - Issue register: Claude groups each judged item into a named root cause (e.g. "Extractor sets student fare type without the user asking"), with theme, owner, fix lane, recommended fix and a prompt rule. Status per issue (Open / Being fixed / Fixed / Won't fix / Not an issue); fixed issues that come back are flagged "Back after fix".
   - Priorities tab (now the default): Day / Week / Month, analyst brief, KPIs, P1/P2/P3 issue table with trend vs previous period, product-area chart, friction-type table, gone-quiet and closed-but-seen lists, RAG pack card. Issue page per issue.

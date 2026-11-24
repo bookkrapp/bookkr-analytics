@@ -41,3 +41,13 @@ Append-only. Newest at the bottom. See `CLAUDE.md`.
 **Notes:** No code changed. Local .env not set up yet.
 
 **Files:** _none in the working tree — already committed?_
+
+---
+
+## 2026-11-24 22:55 IST · `main`
+
+**Summary:** Funnel journey filter, trip planning vs direct report, R10 fare-category context for the judge, Priorities redesign, Ask (text-to-SQL); one commit each (1a7b7f8, 6b6c579, 8423b10, 60fe3ef, 2ec1091)
+
+**Notes:** Tested against the 20 Nov prod snapshot loaded into a local Postgres; judge and Ask tested via the Claude subscription. Docker build not run. Render needs Refresh data once and ANTHROPIC_API_KEY for Ask.
+
+**Files:** `TRACKER.md`
