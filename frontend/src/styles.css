@@ -290,14 +290,61 @@ textarea.mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   color: var(--text-secondary); white-space: nowrap; vertical-align: 1px; }
 .tag.bad { background: color-mix(in srgb, var(--critical) 16%, transparent); color: var(--text-primary); }
 .tag.effort-small { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--text-primary); }
-.issue-cell { min-width: 260px; max-width: 560px; }
-.brief .headline { font-size: 16px; font-weight: 650; margin-bottom: 6px; }
-.brief p { margin: 0 0 12px; color: var(--text-secondary); }
-.brief h3 { margin: 14px 0 6px; }
-.brief ol.actions { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; }
-.brief ol.actions li > div + div { margin-top: 2px; }
-.brief-cols { display: grid; gap: 4px 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-.brief-cols ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.issue-cell { min-width: 260px; max-width: 560px; white-space: normal; }
+.strong { font-weight: 600; }
+
+/* Analyst brief */
+.brief-card { border-top: 4px solid var(--accent); }
+.brief .headline { font-size: 18px; font-weight: 700; line-height: 1.35; padding: 12px 14px; border-radius: 8px;
+  background: var(--accent-wash); border-left: 4px solid var(--accent); margin-bottom: 12px; }
+.brief p.summary { margin: 0 0 4px; color: var(--text-secondary); font-size: 14.5px; line-height: 1.6; max-width: 1000px; }
+.brief h3.brief-h { font-size: 15px; color: var(--text-primary); margin: 18px 0 8px; }
+.brief-table td { white-space: normal; vertical-align: top; padding: 10px; }
+.brief-table th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.brief-table tbody tr:nth-child(odd) td { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.brief-table td.wrap-cell { min-width: 180px; max-width: 360px; line-height: 1.5; }
+.brief-table .rank { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 12px; }
+.team-chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border);
+  background: var(--surface-2); white-space: nowrap; }
+.effort { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; text-transform: capitalize; }
+.effort.small { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good-text); }
+.effort.medium { background: color-mix(in srgb, var(--warning) 22%, transparent); color: var(--text-primary); }
+.effort.large { background: color-mix(in srgb, var(--critical) 16%, transparent); color: var(--bad-text); }
+.brief-boxes { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 16px; }
+.brief-box { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; border-top: 3px solid var(--bx);
+  background: color-mix(in srgb, var(--bx) 6%, var(--surface-1)); }
+.brief-box h3 { color: var(--text-primary); font-size: 14px; margin: 0 0 8px; }
+.brief-box ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; line-height: 1.45; }
+.brief-box.win { --bx: var(--good); }
+.brief-box.worse { --bx: var(--critical); }
+.brief-box.better { --bx: var(--accent); }
+.brief-box.watch { --bx: var(--warning); }
+.brief-note { margin-top: 14px; font-size: 12.5px; color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; background: var(--surface-2); }
+
+/* Issues by priority */
+.prio-section { margin-top: 6px; }
+.prio-section + .prio-section { margin-top: 20px; }
+.prio-section h3 { font-size: 15px; color: var(--text-primary); margin: 0 0 10px; display: flex; gap: 10px; align-items: baseline; }
+.prio-section h3 .muted { font-weight: 400; }
+details.prio-section > summary { list-style: none; }
+details.prio-section > summary::-webkit-details-marker { display: none; }
+details.prio-section > summary h3 { display: inline-flex; }
+.issue-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.issue-card { text-align: left; font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px; background: var(--surface-1); border-left: 5px solid var(--critical); display: flex; flex-direction: column; gap: 8px; }
+.issue-card:hover { background: var(--surface-2); }
+.issue-card:focus-visible { outline: 2px solid var(--accent); }
+.issue-card-top { display: flex; gap: 8px; align-items: flex-start; }
+.issue-title { font-weight: 650; font-size: 14.5px; line-height: 1.35; }
+.issue-stats { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); }
+.issue-stats b { color: var(--text-primary); }
+.issue-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.issue-fix { font-size: 13px; line-height: 1.5; color: var(--text-secondary); background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+.sev-txt { font-size: 12.5px; white-space: nowrap; }
+.sev-txt.high { color: var(--bad-text); }
+.sev-txt.medium { color: var(--warning); }
+.sev-txt.low { color: var(--text-muted); }
 
 /* Cohort heatmap */
 .heat td.cell { text-align: center; font-variant-numeric: tabular-nums; min-width: 52px; border: 2px solid var(--surface-1); border-radius: 4px; }

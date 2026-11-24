@@ -57,16 +57,25 @@ function Brief({ rep, onMade }: { rep: any; onMade: () => void }) {
     catch (e: any) { setErr(e.message); }
   };
   const name = (id: number) => rep.issues.find((i: any) => i.id === id)?.title;
+  const prio = (id: number) => rep.issues.find((i: any) => i.id === id)?.priority;
   const IssueRef = ({ id, title }: { id: number; title?: string }) =>
     <Link to={`/friction/issue/${id}`}>{title || name(id) || `Issue #${id}`}</Link>;
+  const lists: [string, string, string, any[] | undefined][] = [
+    ["⚡", "Quick wins", "win", b?.quick_wins],
+    ["📈", "Getting worse", "worse", b?.worsening],
+    ["📉", "Getting better", "better", b?.improving],
+  ];
   return (
-    <Card title="Analyst brief" info="f_brief" right={
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        {rep.brief && <span className="muted small">Written {fmtIST(rep.brief.created_at)} · {rep.brief.triggered_by === "schedule" ? "automatic" : "on request"}</span>}
-        <button className="btn" disabled={busy || !rep.llm_enabled} onClick={make}>
-          {busy ? "Writing… (about a minute)" : rep.brief ? "Rewrite" : "Write brief"}
-        </button>
-      </div>}>
+    <section className="card brief-card">
+      <div className="card-head">
+        <h2>📋 Analyst brief<Info k="f_brief" /></h2>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {rep.brief && <span className="muted small">Written {fmtIST(rep.brief.created_at)} · {rep.brief.triggered_by === "schedule" ? "automatic" : "on request"}</span>}
+          <button className="btn" disabled={busy || !rep.llm_enabled} onClick={make}>
+            {busy ? "Writing… (about a minute)" : rep.brief ? "Rewrite" : "Write brief"}
+          </button>
+        </div>
+      </div>
       {err && <div className="down small">{err}</div>}
       {!b ? (
         <div className="muted">No brief for this period yet. {rep.llm_enabled
@@ -75,40 +84,111 @@ function Brief({ rep, onMade }: { rep: any; onMade: () => void }) {
       ) : (
         <div className="brief">
           <div className="headline">{b.headline}</div>
-          {b.summary && <p>{b.summary}</p>}
+          {b.summary && <p className="summary">{b.summary}</p>}
+
           {b.top_actions?.length > 0 && (
             <>
-              <h3>Fix first</h3>
-              <ol className="actions">
-                {b.top_actions.map((a: any, n: number) => (
-                  <li key={n}>
-                    <div><b>{a.issue_id ? <IssueRef id={a.issue_id} title={a.title} /> : a.title}</b>
-                      <span className="tag">{a.team}</span>{a.effort && <span className={`tag effort-${a.effort}`}>{a.effort} effort</span>}</div>
-                    <div className="muted">{a.why}</div>
-                    <div>→ {a.action}</div>
-                  </li>
-                ))}
-              </ol>
+              <h3 className="brief-h">🛠️ Fix first</h3>
+              <div className="table-wrap">
+                <table className="brief-table">
+                  <thead>
+                    <tr><th>#</th><th>Issue</th><th>Why it matters</th><th>Next step</th><th>Team</th><th>Effort</th></tr>
+                  </thead>
+                  <tbody>
+                    {b.top_actions.map((a: any, n: number) => (
+                      <tr key={n}>
+                        <td><span className="rank">{n + 1}</span></td>
+                        <td className="wrap-cell strong">
+                          {a.issue_id ? <IssueRef id={a.issue_id} title={a.title} /> : a.title}
+                          {a.issue_id && prio(a.issue_id) && <> <PriorityBadge p={prio(a.issue_id)} /></>}
+                        </td>
+                        <td className="wrap-cell">{a.why}</td>
+                        <td className="wrap-cell">{a.action}</td>
+                        <td><TeamChip team={a.team} /></td>
+                        <td>{a.effort && <span className={`effort ${a.effort}`}>{a.effort}</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
-          <div className="brief-cols">
-            {[["Quick wins", b.quick_wins], ["Getting worse", b.worsening], ["Getting better", b.improving]].map(([t, l]: any) =>
-              l?.length ? (
-                <div key={t}>
-                  <h3>{t}</h3>
-                  <ul>{l.map((x: any, n: number) => (
-                    <li key={n}>{x.issue_id ? <><IssueRef id={x.issue_id} />: <span className="muted">{x.note}</span></> : x.note}</li>
-                  ))}</ul>
-                </div>
-              ) : null)}
+
+          <div className="brief-boxes">
+            {lists.map(([icon, title, kind, l]) => l?.length ? (
+              <div key={title} className={`brief-box ${kind}`}>
+                <h3>{icon} {title}</h3>
+                <ul>{l.map((x: any, n: number) => (
+                  <li key={n}>{x.issue_id ? <><IssueRef id={x.issue_id} /><div className="muted">{x.note}</div></> : x.note}</li>
+                ))}</ul>
+              </div>
+            ) : null)}
             {b.watch?.length > 0 && (
-              <div><h3>Keep an eye on</h3><ul>{b.watch.map((w: string, n: number) => <li key={n}>{w}</li>)}</ul></div>
+              <div className="brief-box watch">
+                <h3>👀 Keep an eye on</h3>
+                <ul>{b.watch.map((w: string, n: number) => <li key={n}>{w}</li>)}</ul>
+              </div>
             )}
           </div>
-          {b.data_note && <div className="muted small" style={{ marginTop: 8 }}>Note: {b.data_note}</div>}
+          {b.data_note && <div className="brief-note">ℹ️ {b.data_note}</div>}
         </div>
       )}
-    </Card>
+    </section>
+  );
+}
+
+const TEAM_ICON: Record<string, string> = { engineering: "🛠️", "ai / prompts": "🤖", ai: "🤖", product: "🧭", ops: "📞" };
+function TeamChip({ team }: { team?: string }) {
+  if (!team) return null;
+  const k = team.toLowerCase();
+  const icon = TEAM_ICON[k] ?? (k.includes("ai") || k.includes("prompt") ? "🤖" : k.includes("eng") ? "🛠️" : "👥");
+  return <span className="team-chip">{icon} {team}</span>;
+}
+
+const SEV = (s: number) => (s >= 2.5 ? ["High", "high"] : s >= 1.75 ? ["Medium", "medium"] : ["Low", "low"]);
+
+function IssueCard({ r, onOpen }: { r: any; onOpen: () => void }) {
+  const [sev, cls] = SEV(r.avg_severity);
+  return (
+    <button className={`issue-card ${r.priority?.toLowerCase()}`} onClick={onOpen}>
+      <div className="issue-card-top">
+        <PriorityBadge p={r.priority} />
+        <span className="issue-title">{r.title}</span>
+        {r.regression && <span className="tag bad">Back after fix</span>}
+        {r.status === "in_progress" && <span className="tag">Being fixed</span>}
+      </div>
+      <div className="issue-stats">
+        <span title="Users who hit this issue">👥 <b>{fmtNum(r.users)}</b> users</span>
+        <span title="Chats with this issue">💬 <b>{fmtNum(r.chats)}</b> chats</span>
+        <span><Trend cur={r.chats} prev={r.prev_chats} trend={r.trend} /></span>
+        <span className={`sev-txt ${cls}`}>● {sev} severity</span>
+        {r.booked_chats > 0 && <span title="Chats that still booked">✅ {r.booked_chats} still booked</span>}
+      </div>
+      <div className="issue-meta">
+        <BucketPill b={r.bucket} /> <LanePill lane={r.fix_lane} /> <span className="muted small">{r.theme} · {r.owner_label}</span>
+      </div>
+      {r.recommended_fix && <div className="issue-fix">💡 {r.recommended_fix}</div>}
+    </button>
+  );
+}
+
+function IssueTable({ rows, nav }: { rows: any[]; nav: (p: string) => void }) {
+  return (
+    <Table rows={rows} onRow={(r) => nav(`/friction/issue/${r.id}`)} cols={[
+      { key: "priority", label: "", render: (r) => <PriorityBadge p={r.priority} /> },
+      { key: "title", label: "Issue", render: (r) => (
+        <div className="issue-cell">
+          <div className="strong">{r.title}{r.regression && <span className="tag bad">Back after fix</span>}{r.status === "in_progress" && <span className="tag">Being fixed</span>}</div>
+          <div className="muted small">{r.theme} · {r.owner_label}</div>
+        </div>) },
+      { key: "users", label: "Users", num: true, info: "f_issue_users" },
+      { key: "chats", label: "Chats", num: true },
+      { key: "trend", label: "vs previous", render: (r) => <Trend cur={r.chats} prev={r.prev_chats} trend={r.trend} /> },
+      { key: "avg_severity", label: "Severity", info: "f_issue_severity",
+        render: (r) => { const [s, c] = SEV(r.avg_severity); return <span className={`sev-txt ${c}`}>● {s}</span>; } },
+      { key: "bucket", label: "Bucket", render: (r) => <BucketPill b={r.bucket} /> },
+      { key: "fix_lane", label: "Fix goes to", render: (r) => <LanePill lane={r.fix_lane} /> },
+    ]} />
   );
 }
 
@@ -198,6 +278,8 @@ export default function Priorities() {
   const issues = (rep?.issues ?? []).filter((i: any) => !bucket || i.bucket === bucket);
   const p1 = rep?.issues.filter((i: any) => i.priority === "P1") ?? [];
   const affectedUsers = rep ? rep.issues.reduce((s: number, i: any) => s + i.users, 0) : 0;
+  const byP = (p: string) => issues.filter((i: any) => i.priority === p);
+  const sumUsers = (l: any[]) => fmtNum(l.reduce((s, i) => s + i.users, 0));
   return (
     <>
       <div className="toolbar">
@@ -246,29 +328,38 @@ export default function Priorities() {
                  sub={<span>a user hit by 2 issues counts twice</span>} />
           </div>
 
-          <Card title="Issues by priority" info="f_priority" right={
+          <Card title="🎯 Issues by priority" info="f_priority" right={
             <div className="seg">
-              {[["", "All"], ["technical", "Technical"], ["intent", "Intent"], ["suggestion", "Suggestion"]].map(([k, l]) => (
+              {[["", "All"], ["technical", "⚙️ Technical"], ["intent", "🧠 Intent"], ["suggestion", "💬 Suggestion"]].map(([k, l]) => (
                 <button key={k} className={bucket === k ? "on" : ""} onClick={() => setBucket(k)}>{l}</button>
               ))}
             </div>}>
-            <Table rows={issues} onRow={(r) => nav(`/friction/issue/${r.id}`)}
-                   empty={rep.coverage.judged_days ? "No grouped issues yet. Group the new items into issues." : "No LLM-judged days in this period yet."}
-                   cols={[
-                     { key: "priority", label: "Priority", render: (r) => <PriorityBadge p={r.priority} /> },
-                     { key: "title", label: "Issue", render: (r) => (
-                       <div className="issue-cell">
-                         <div>{r.title}{r.regression && <span className="tag bad">Back after fix</span>}{r.status === "in_progress" && <span className="tag">Being fixed</span>}</div>
-                         <div className="muted small">{r.theme} · {r.owner_label}</div>
-                       </div>) },
-                     { key: "users", label: "Users", num: true, info: "f_issue_users" },
-                     { key: "chats", label: "Chats", num: true },
-                     { key: "trend", label: "vs previous", render: (r) => <Trend cur={r.chats} prev={r.prev_chats} trend={r.trend} /> },
-                     { key: "avg_severity", label: "Severity", num: true, info: "f_issue_severity",
-                       render: (r) => <span title={`${r.high} high-severity`}>{r.avg_severity >= 2.5 ? "High" : r.avg_severity >= 1.75 ? "Medium" : "Low"}</span> },
-                     { key: "bucket", label: "Bucket", render: (r) => <BucketPill b={r.bucket} /> },
-                     { key: "fix_lane", label: "Fix goes to", render: (r) => <LanePill lane={r.fix_lane} /> },
-                   ]} />
+            {!issues.length ? (
+              <div className="empty">{rep.coverage.judged_days ? "No grouped issues yet. Group the new items into issues." : "No LLM-judged days in this period yet."}</div>
+            ) : (
+              <>
+                {byP("P1").length > 0 && (
+                  <div className="prio-section p1">
+                    <h3>🔴 P1 · Fix now <span className="muted small">{byP("P1").length} issues · {sumUsers(byP("P1"))} user hits</span></h3>
+                    <div className="issue-cards">
+                      {byP("P1").map((r: any) => <IssueCard key={r.id} r={r} onOpen={() => nav(`/friction/issue/${r.id}`)} />)}
+                    </div>
+                  </div>
+                )}
+                {byP("P2").length > 0 && (
+                  <div className="prio-section p2">
+                    <h3>🟠 P2 · Next up <span className="muted small">{byP("P2").length} issues · {sumUsers(byP("P2"))} user hits</span></h3>
+                    <IssueTable rows={byP("P2")} nav={nav} />
+                  </div>
+                )}
+                {byP("P3").length > 0 && (
+                  <details className="prio-section p3">
+                    <summary><h3>⚪ P3 · Later <span className="muted small">{byP("P3").length} issues · {sumUsers(byP("P3"))} user hits · click to show</span></h3></summary>
+                    <IssueTable rows={byP("P3")} nav={nav} />
+                  </details>
+                )}
+              </>
+            )}
           </Card>
 
           <div className="grid g2">
