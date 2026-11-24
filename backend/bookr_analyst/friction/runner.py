@@ -65,7 +65,21 @@ def state() -> dict:
     return dict(_state)
 
 
+def _guard_llm_day(day: date, use_llm: bool | None) -> None:
+    """A rules-only run replaces a day's findings, so it must never overwrite a day Claude already judged
+    (e.g. the deployed app, which has no LLM, re-running a day the laptop judged on the Claude subscription)."""
+    if _mode(use_llm) != "rules":
+        return
+    with conn() as c:
+        judged = c.execute("SELECT 1 FROM runs WHERE day = ? AND mode = 'llm' AND status = 'done' LIMIT 1",
+                           (day.isoformat(),)).fetchone()
+    if judged:
+        raise RuntimeError(f"{day} was already judged by Claude. A rules-only run would replace those results, "
+                           "so it was not started. Re-run it with the LLM judge instead.")
+
+
 def start_run(day: date, use_llm: bool | None = None, triggered_by: str = "ui") -> int:
+    _guard_llm_day(day, use_llm)
     with _state_lock:
         if _state["running"]:
             raise RuntimeError("A Friction Finder run is already in progress")
@@ -126,6 +140,7 @@ def run_day(day: date, use_llm: bool | None = None, triggered_by: str = "cli", r
     cfg = S.config()
     mode = _mode(use_llm)
     if run_id is None:
+        _guard_llm_day(day, use_llm)
         run_id = _create_run(day, use_llm, triggered_by)
     try:
         bundles = load_day(day, exclude_internal=cfg.get("exclude_internal_users", True), session_ids=session_ids)
