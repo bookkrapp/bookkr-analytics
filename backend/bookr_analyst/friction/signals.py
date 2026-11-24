@@ -248,6 +248,11 @@ def compute(bundle: dict) -> list[dict]:
     out.extend(_search_mismatch(bundle, W))
     # the turn's travel intent vs the flight-search intent re-extracted from carried state
     out.extend(_intent_drift(bundle, W))
+    # context only: a student / senior-citizen fare the user picked on the confirmation card (a tap, not a message)
+    fare = _fare_category_pick(bundle)
+    if fare:
+        add("fare_category_picked", 0, [fare[0]], f"User picked the {fare[1]} fare on the confirmation card "
+            "(not typed; this is the user's choice, not an extractor guess)", "expected", "low")
 
     # LLM calls: a failure the user saw is technical; a LoRA failure recovered by the fallback is a fine-tune hint
     calls = bundle.get("llm_calls") or []
@@ -412,6 +417,29 @@ def _intent_drift(bundle: dict, W: dict) -> list[dict]:
                         "detail": f"Flight-search intent differs from the travel intent just captured: {key}",
                         "type": "wrong_search", "bucket": "intent", "owner": "flight_state_carryover", "severity": "high"})
     return out
+
+
+_FARE_WORDS = re.compile(r"student|senior|citizen|sr\.? citizen|vidyarthi", re.I)
+
+
+def _fare_category_pick(bundle: dict) -> tuple[int | None, str] | None:
+    """(turn, category) when passengerFareType first appears without the user having typed a fare category."""
+    for e in sorted((e for e in bundle["events"] if e["kind"] == "intent"), key=lambda e: e["at"]):
+        p = e["raw"].get("parameters")
+        if isinstance(p, str):
+            try:
+                p = json.loads(p)
+            except ValueError:
+                continue
+        cat = p.get("passengerFareType") if isinstance(p, dict) else None
+        if not cat:
+            continue
+        typed = any(t["role"] == "USER" and t.get("at_utc") and t["at_utc"] <= e["at"] and _FARE_WORDS.search(t["text"] or "")
+                    for t in bundle["turns"])
+        if typed:
+            return None
+        return _turn_at(bundle["turns"], e["at"]), str(cat).replace("_", " ").lower()
+    return None
 
 
 def _feedback_bucket(sig: list[dict], turns: list[dict], tn: int | None) -> str:

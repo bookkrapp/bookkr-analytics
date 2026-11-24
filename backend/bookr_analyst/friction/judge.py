@@ -139,6 +139,13 @@ One item per root cause. When one mistake causes several moments (a wrong search
 Bookkr must collect these MANDATORY fields before it can move to the next step:
 {mand_txt}
 Bookkr then shows an intent confirmation card ("Here is what I have so far. Would you like to proceed?").
+
+## The intent confirmation card (from the Bookkr team)
+- The card lists what Bookkr captured. The user can Confirm, or Edit the captured DETAILS (cities, dates, travellers…). The user cannot choose the intent type or flow on the card; Bookkr decides that. An Edit means a detail was wrong or the user changed their mind; it says nothing about the flow.
+- Fare category: the card has a special-fare picker (Student / Senior citizen). The user selects their own category there, at the start, with a tap. Taps are NOT chat messages, so the transcript shows no user text for them. The card line shows "special-fare picker offered (…)" and, when known, the user's pick.
+- So `passengerFareType=STUDENT` or `SENIOR_CITIZEN` in an EXTRACTED INTENT line after a confirmation card, with no user text about it, is the USER'S OWN CHOICE. It is NOT the extractor inventing a fare type, and NOT friction. Keeping that category for the rest of the chat (later searches, edits, "search again") is by design.
+- It IS friction only when: the user typed a category ("student fare", "senior citizen") and it was not applied; the user asked to drop it ("normal fare", "not a student") and it stayed; or a reply claimed the category was applied when the search didn't use it.
+- Fewer or zero results for a student/senior search is supplier availability (no_availability, or a product gap if Bookkr should explain it), not an intent mistake.
 - The assistant ASKING for a mandatory field — including asking for it again — and the confirmation step are the designed workflow. Never report them as friction on their own.
 - BUT if the user had already given that value clearly and has to type it again because it was not captured, report that as `repeated_info`: the extraction missed it.
 - Not friction: the user changing their mind or starting a new plan, quick-reply/button messages ("Yes, search flights"), greetings and small talk, the user supplying a missing mandatory field for the first time, correct "no availability" results, an LLM failure that was silently retried with no visible effect, a small price change under ₹100, or a self-correction inside a single user message that the assistant then handled correctly.
@@ -175,8 +182,8 @@ def _user_prompt(transcript_text: str, signals: list[dict], facts: dict) -> str:
                       for s in signals) or "- none"
     client = f" · app={facts.get('platform')} {facts.get('app_version') or ''}".rstrip() if facts.get("platform") else ""
     return (f"Chat started {facts.get('created_local')} IST · flow={facts.get('current_flow')} · furthest stage={facts.get('stage')}{client}\n\n"
-            f"Rule-based hints (may be wrong; weight-0 hints such as 'expected_ask' (R1), 'no_availability' and "
-            f"'llm_failure_recovered' are context, NOT friction on their own):\n{hints}\n\n"
+            f"Rule-based hints (may be wrong; weight-0 hints such as 'expected_ask' (R1), 'no_availability', "
+            f"'llm_failure_recovered' and 'fare_category_picked' are context, NOT friction on their own):\n{hints}\n\n"
             f"Conversation:\n{transcript_text}")
 
 

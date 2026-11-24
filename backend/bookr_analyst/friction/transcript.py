@@ -50,8 +50,19 @@ def intent_summary(params) -> str:
     for k, v in params.items():
         s = _val(v)
         if s:
-            parts.append(f"{k}={s}")
+            # fare category comes from the user's tap on the confirmation card, not from what they typed
+            parts.append(f"{k}={s} (fare category the user picked on the card or typed)" if k == "passengerFareType"
+                         else f"{k}={s}")
     return "; ".join(parts)[:900]
+
+
+def _fare_picker(d: dict) -> str:
+    """The special-fare picker on the confirmation card. A tap on it is not a chat message, so say it was offered."""
+    sf = d.get("specialFares") if isinstance(d.get("specialFares"), dict) else None
+    if not sf or sf.get("disabled"):
+        return ""
+    opts = " / ".join(o.get("label") or o.get("type") or "?" for o in sf.get("options") or [] if isinstance(o, dict))
+    return f"; special-fare picker offered ({opts}), user's pick: {sf.get('selected') or 'none yet'}" if opts else ""
 
 
 def card_summary(card_type, card_data, card_shape) -> str | None:
@@ -60,7 +71,7 @@ def card_summary(card_type, card_data, card_shape) -> str | None:
     d = card_data if isinstance(card_data, dict) else None
     if card_type == "intent_confirmation" and d and d.get("summary"):
         fields = "; ".join(f"{s.get('label')}={s.get('value')}" for s in d["summary"])
-        return f"[intent confirmation card: {fields}; complete={d.get('isComplete')}; actions={d.get('actions')}]"
+        return f"[intent confirmation card: {fields}; complete={d.get('isComplete')}; actions={d.get('actions')}{_fare_picker(d)}]"
     if card_type == "payment_result" and d:
         return f"[payment result card: outcome={d.get('outcome')}; amount={d.get('amount')}]"
     shape = card_shape if isinstance(card_shape, dict) else {}
