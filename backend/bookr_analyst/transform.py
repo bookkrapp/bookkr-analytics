@@ -6,6 +6,24 @@ from .config import settings
 RESULT_CARDS = ["flight_results", "hotel_card", "hotel_booking_result"]
 RESULT_PANELS = ["flight_results", "hotel_results", "multi_city_flights", "multi_city_hotel_results"]
 
+# What the user came to do, one value per chat (session_facts.journey_type). Order matters: first match wins.
+#   trip_plan    asked Bookkr to plan a trip (multi-city flow, a plan card or panel, or a trip-planning intent)
+#   flight_hotel searched (or asked for) both flights and hotels
+#   round_trip   flights only, with a round-trip search or round-trip intent
+#   one_way      flights only, one-way
+#   hotel        hotels only
+#   unclear      no search and no usable intent yet
+JOURNEY_SQL = """
+    CASE WHEN b.is_trip_plan THEN 'trip_plan'
+         WHEN (b.n_flight_searches > 0 OR (b.n_hotel_searches = 0 AND b.has_flight_intent))
+              AND (b.n_hotel_searches > 0 OR (b.n_flight_searches = 0 AND b.has_hotel_intent)) THEN 'flight_hotel'
+         WHEN b.n_flight_searches > 0 OR (b.n_hotel_searches = 0 AND b.has_flight_intent)
+              THEN CASE WHEN b.any_round_trip_search
+                          OR (b.n_flight_searches = 0 AND b.intent_trip_type = 'ROUND_TRIP') THEN 'round_trip'
+                        ELSE 'one_way' END
+         WHEN b.n_hotel_searches > 0 OR b.has_hotel_intent THEN 'hotel'
+         ELSE 'unclear' END"""
+
 STAGES = [
     (1, "Chat created"),
     (2, "User engaged"),
@@ -52,9 +70,12 @@ def build(con) -> None:
                    bool_or(card_type = 'intent_confirmation') AS has_intent_card,
                    bool_or(card_type = ANY($result_cards)) AS has_result_card,
                    bool_or(card_type = 'payment_result') AS has_payment_card,
+                   bool_or(card_type = 'itinerary_options') AS has_plan_card,
+                   bool_or(card_type = 'itinerary_dates') AS has_plan_dates_card,
                    count(*) FILTER (WHERE kind = 'shared_failure') AS n_failure_msgs
             FROM messages GROUP BY 1),
-        fs AS (SELECT chat_session_id, count(*) AS n_flight_searches, min(created_at) AS first_fs_at
+        fs AS (SELECT chat_session_id, count(*) AS n_flight_searches, min(created_at) AS first_fs_at,
+                      bool_or(is_round_trip) AS any_round_trip_search
                FROM raw_flight_searches GROUP BY 1),
         hs AS (SELECT chat_session_id, count(*) AS n_hotel_searches, min(created_at) AS first_hs_at
                FROM raw_hotel_searches GROUP BY 1),
@@ -63,7 +84,12 @@ def build(con) -> None:
                       coalesce(sum(amount_payable) FILTER (WHERE status = 'BOOKED'), 0) AS gmv,
                       count(*) FILTER (WHERE status = 'FAILED') AS n_failed_bookings
                FROM raw_flight_bookings WHERE chat_session_id IS NOT NULL GROUP BY 1),
-        it AS (SELECT chat_session_id, count(*) AS n_intents, avg(confidence) AS avg_intent_confidence
+        it AS (SELECT chat_session_id, count(*) AS n_intents, avg(confidence) AS avg_intent_confidence,
+                      bool_or(intent_type = 'hotel_search') AS has_hotel_intent,
+                      bool_or(intent_type = 'flight_search'
+                              OR (intent_type = 'travel_intent' AND parameters->>'origin' IS NOT NULL
+                                  AND parameters->>'destination' IS NOT NULL)) AS has_flight_intent,
+                      bool_or(intent_type = 'multi_city_trip_planning') AS has_plan_intent
                FROM raw_intents WHERE deleted_at IS NULL GROUP BY 1),
         llm AS (SELECT chat_session_id, sum(cost_usd) AS llm_cost_usd, count(*) AS n_llm_calls
                 FROM raw_llm_calls GROUP BY 1),
@@ -84,6 +110,17 @@ def build(con) -> None:
                      AS has_results,
                    coalesce(m.has_payment_card, false) AS has_payment_card,
                    coalesce(m.n_failure_msgs, 0) AS n_failure_msgs,
+                   coalesce(m.has_plan_card, false)
+                     OR coalesce(m.has_plan_dates_card, false)
+                     OR coalesce(it.has_plan_intent, false)
+                     OR coalesce(f.current_flow = 'multi_city', false)
+                     OR EXISTS (SELECT 1 FROM json_array_elements_text(coalesce(s.panel_card_types, '[]'::json)) pc(t)
+                                WHERE pc.t = 'trip_plan_options')
+                     AS is_trip_plan,
+                   coalesce(fs.any_round_trip_search, false) AS any_round_trip_search,
+                   coalesce(it.has_hotel_intent, false) AS has_hotel_intent,
+                   coalesce(it.has_flight_intent, false) AS has_flight_intent,
+                   f.travel_intent->>'tripType' AS intent_trip_type,
                    coalesce(fs.n_flight_searches, 0) AS n_flight_searches,
                    coalesce(hs.n_hotel_searches, 0) AS n_hotel_searches,
                    least(fs.first_fs_at, hs.first_hs_at) AS first_search_at,
@@ -102,6 +139,7 @@ def build(con) -> None:
             LEFT JOIN it ON it.chat_session_id = s.id
             LEFT JOIN llm ON llm.chat_session_id = s.id)
         SELECT b.*,
+               {JOURNEY_SQL} AS journey_type,
                CASE WHEN n_booked > 0 THEN 7
                     WHEN n_booking_attempts > 0 THEN 6
                     WHEN has_results THEN 5
@@ -180,5 +218,6 @@ RAW_INDEXES = [
 ]
 DERIVED_INDEXES = [
     ("session_facts", "session_id"), ("session_facts", "user_id"), ("session_facts", "created_at"),
+    ("session_facts", "journey_type, created_at"),
     ("booking_ops", "chat_session_id"), ("booking_ops", "user_id"), ("booking_ops", "created_at"),
 ]

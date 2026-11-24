@@ -194,13 +194,26 @@ def overview(days: int = 30, exclude_internal: bool = True):
 
 # Funnel ---------------------------------------------------------------------
 
+JOURNEYS = ("one_way", "round_trip", "flight_hotel", "hotel", "trip_plan", "unclear")
+
+
+def _need_journeys(con) -> None:
+    """session_facts gets journey_type from the sync. Until the first sync after this code ships, say so plainly."""
+    if not con.execute("""SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
+                          AND table_name = 'session_facts' AND column_name = 'journey_type'""").fetchone():
+        raise HTTPException(409, "The data was synced before journey types existed. Press Refresh data once to rebuild it.")
+
+
 @app.get("/api/funnel")
-def funnel(days: int = 30, exclude_internal: bool = True, flow: str | None = None):
+def funnel(days: int = 30, exclude_internal: bool = True, journey: str | None = None):
+    if journey and journey not in JOURNEYS:
+        raise HTTPException(400, f"journey must be one of {list(JOURNEYS)}")
     with connect() as con:
+        _need_journeys(con)
         w = _window(con, days)
-        p = {"s": w["start"], "e": w["end"], "x": exclude_internal, "flow": flow}
-        base = """FROM session_facts WHERE created_at >= $s AND created_at < $e
-                  AND (NOT $x OR NOT is_internal) AND ($flow IS NULL OR current_flow = $flow)"""
+        p = {"s": w["start"], "e": w["end"], "x": exclude_internal, "journey": journey}
+        every = "FROM session_facts WHERE created_at >= $s AND created_at < $e AND (NOT $x OR NOT is_internal)"
+        base = f"{every} AND ($journey IS NULL OR journey_type = $journey)"
         stages = rows(con, f"""
             SELECT st.level, st.name,
                    (SELECT count(*) {base} AND stage_level >= st.level) AS sessions,
@@ -211,14 +224,14 @@ def funnel(days: int = 30, exclude_internal: bool = True, flow: str | None = Non
             prev_n = stages[i - 1]["sessions"] if i else s["sessions"]
             s["pct_of_start"] = round(100 * s["sessions"] / top, 1) if top else 0
             s["pct_of_prev"] = round(100 * s["sessions"] / prev_n, 1) if prev_n else 0
-        by_flow = rows(con, f"""
-            SELECT current_flow AS flow, count(*) AS sessions,
+        by_journey = rows(con, f"""
+            SELECT journey_type AS journey, count(*) AS sessions, count(DISTINCT user_id) AS users,
                    count(*) FILTER (WHERE stage_level >= 4) AS searched,
                    count(*) FILTER (WHERE stage_level >= 5) AS results_shown,
                    count(*) FILTER (WHERE stage_level >= 6) AS booking_attempted,
                    count(*) FILTER (WHERE stage_level >= 7) AS booked,
                    round(avg(n_user_msgs), 1) AS avg_user_msgs
-            {base} GROUP BY 1 ORDER BY 2 DESC""", p)
+            {every} GROUP BY 1 ORDER BY 2 DESC""", p)  # every journey, so the rows stay comparable under a filter
         weekly = rows(con, f"""
             SELECT CAST(date_trunc('week', created_local) AS DATE) AS week, count(*) AS sessions,
                    count(*) FILTER (WHERE stage_level >= 3) AS intent_captured,
@@ -235,7 +248,7 @@ def funnel(days: int = 30, exclude_internal: bool = True, flow: str | None = Non
                    round(100.0 * count(*) FILTER (WHERE n_user_msgs > 0 AND stage_level <= 3) / nullif(count(*), 0), 1) AS pct_no_search,
                    count(*) FILTER (WHERE n_failure_msgs > 0) AS sessions_with_failures
             {base}""", p)
-    return {"stages": stages, "by_flow": by_flow, "weekly": weekly, "ux": ux}
+    return {"stages": stages, "by_journey": by_journey, "weekly": weekly, "ux": ux}
 
 
 # Booking & payment ops ------------------------------------------------------
@@ -295,25 +308,30 @@ OUTCOMES = {
 @app.get("/api/sessions")
 def sessions(days: int = 30, exclude_internal: bool = True, q: str | None = None,
              flow: str | None = None, outcome: str | None = None, stage: int | None = None,
-             user: str | None = None, sort: str = "newest", page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)):
+             user: str | None = None, journey: str | None = None,
+             sort: str = "newest", page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200)):
     if outcome and outcome not in OUTCOMES:
         raise HTTPException(400, f"outcome must be one of {list(OUTCOMES)}")
+    if journey and journey not in JOURNEYS:
+        raise HTTPException(400, f"journey must be one of {list(JOURNEYS)}")
     order = {"newest": "created_at DESC", "oldest": "created_at ASC",
              "most_messages": "n_user_msgs DESC, created_at DESC",
              "stage": "stage_level DESC, created_at DESC"}.get(sort, "created_at DESC")
     with connect() as con:
+        _need_journeys(con)
         w = _window(con, days)
         where = f"""created_at >= $s AND created_at < $e AND (NOT $x OR NOT is_internal)
                     AND ($flow IS NULL OR current_flow = $flow) AND ($stage IS NULL OR stage_level = $stage)
+                    AND {'journey_type = $journey' if journey else 'true'}
                     AND ($user IS NULL OR user_id = $user)
                     AND ({OUTCOMES[outcome] if outcome else 'true'})
                     AND ($q IS NULL OR title ILIKE '%' || $q || '%' OR session_id = $q OR EXISTS (
                         SELECT 1 FROM messages m WHERE m.chat_session_id = sf.session_id AND m.content ILIKE '%' || $q || '%'))"""
         p = {"s": w["start"], "e": w["end"], "x": exclude_internal, "flow": flow, "stage": stage, "q": q or None,
-             "user": user or None}
+             "user": user or None, "journey": journey}
         total = con.execute(f"SELECT count(*) FROM session_facts sf WHERE {where}", p).fetchone()[0]
         items = rows(con, f"""
-            SELECT sf.session_id, sf.created_local, sf.title, sf.user_id, sf.current_flow, sf.is_group_chat,
+            SELECT sf.session_id, sf.created_local, sf.title, sf.user_id, sf.current_flow, sf.journey_type, sf.is_group_chat,
                    sf.stage_level, st.name AS stage, sf.n_user_msgs, sf.n_messages,
                    sf.n_flight_searches, sf.n_hotel_searches, sf.n_booking_attempts, sf.n_booked,
                    sf.n_failed_bookings, sf.gmv, sf.n_failure_msgs

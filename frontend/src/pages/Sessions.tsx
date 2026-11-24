@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useApi } from "../api";
 import { Card, ErrorBox, Loading, Table } from "../components";
 import { fmtDateTime, fmtINR, shortId } from "../format";
+import { JOURNEYS, JOURNEY_LABEL } from "../journeys";
 
 const OUTCOMES = [
   { v: "", label: "All sessions" },
@@ -13,14 +14,13 @@ const OUTCOMES = [
   { v: "failure_msgs", label: "Has failure messages" },
   { v: "group", label: "Group chats" },
 ];
-const FLOW_LABEL: Record<string, string> = { single_flight: "Single flight", multi_city: "Multi-city", unresolved: "Unresolved", none: "—" };
 
 export default function Sessions() {
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
   const [text, setText] = useState(sp.get("q") ?? "");
   const outcome = sp.get("outcome") ?? "";
-  const flow = sp.get("flow") ?? "";
+  const journey = sp.get("journey") ?? "";
   const sort = sp.get("sort") ?? "newest";
   const page = Number(sp.get("page") ?? 1);
   const set = (k: string, v: string) => {
@@ -31,7 +31,7 @@ export default function Sessions() {
   };
   const user = sp.get("user") ?? "";
   const { data, error, loading } = useApi("/api/sessions", {
-    q: sp.get("q") || undefined, outcome: outcome || undefined, flow: flow || undefined, user: user || undefined,
+    q: sp.get("q") || undefined, outcome: outcome || undefined, journey: journey || undefined, user: user || undefined,
     sort, page, page_size: 50,
   });
   const pages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
@@ -55,11 +55,9 @@ export default function Sessions() {
           <select value={outcome} onChange={(e) => set("outcome", e.target.value)} aria-label="Outcome">
             {OUTCOMES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
           </select>
-          <select value={flow} onChange={(e) => set("flow", e.target.value)} aria-label="Flow">
-            <option value="">All flows</option>
-            <option value="single_flight">Single flight</option>
-            <option value="multi_city">Multi-city</option>
-            <option value="unresolved">Unresolved</option>
+          <select value={journey} onChange={(e) => set("journey", e.target.value)} aria-label="Journey">
+            <option value="">All journeys</option>
+            {JOURNEYS.map((j) => <option key={j.v} value={j.v}>{j.icon} {j.label}</option>)}
           </select>
           <select value={sort} onChange={(e) => set("sort", e.target.value)} aria-label="Sort">
             <option value="newest">Newest first</option>
@@ -83,7 +81,7 @@ export default function Sessions() {
               cols={[
                 { key: "created_local", label: "Started (IST)", render: (r) => fmtDateTime(r.created_local) },
                 { key: "title", label: "Title", render: (r) => r.title || <span className="muted">Untitled</span> },
-                { key: "current_flow", label: "Flow", render: (r) => FLOW_LABEL[r.current_flow] ?? r.current_flow },
+                { key: "journey_type", label: "Journey", render: (r) => JOURNEY_LABEL[r.journey_type] ?? r.journey_type },
                 { key: "stage", label: "Furthest stage", render: (r) => <span className="chip">{r.stage}</span> },
                 { key: "n_user_msgs", label: "User msgs", num: true },
                 { key: "searches", label: "Searches", num: true, render: (r) => r.n_flight_searches + r.n_hotel_searches },

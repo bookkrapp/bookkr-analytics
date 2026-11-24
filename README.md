@@ -66,6 +66,7 @@ Neon (source)  ──read-only, one REPEATABLE READ snapshot──►  sync.py
 
 ### Metric definitions (in `transform.py`)
 - **Funnel stage** = furthest stage a chat session reached: Chat created → User engaged (≥1 user message) → Intent captured (intent-confirmation card, flow state `intent_ready`, or a multi-city phase) → Search run (flight or hotel search row) → Results shown (flight/hotel results card or panel) → Booking attempted → Booked (`FlightBooking.status = BOOKED`).
+- **Journey** (`session_facts.journey_type`, the Funnel and Conversations filter) = what the user came to do, first match wins: *Trip planning* (a plan card, the `multi_city` flow, a `multi_city_trip_planning` intent or a `trip_plan_options` panel) → *Flight + hotel* (searched, or for chats with no search asked for, both) → *Round-trip flight* (a round-trip search, or a `ROUND_TRIP` intent when no search ran) → *One-way flight* → *Hotel only* → *Not clear yet*. Needs a sync after deploy (Refresh data) to appear.
 - **Booked / GMV** = `FlightBooking.status = 'BOOKED'`, sum of `amountPayable` (INR). Hotel bookings are not included yet.
 - **Ops severity**: *critical* = money taken but no confirmed booking (`FAILED` with `CAPTURED`/`VOID_PENDING`/`CAPTURED_AWAITING_PROVIDER`, or pending with a captured payment). *Warning* = pending for more than 30 minutes, or booked without a confirmation email. *Info* = failed but resolved, or failed before payment.
 - **Times**: the source stores UTC (Prisma), and everything is shown in IST (`TZ_OFFSET_MINUTES=330`).

@@ -162,6 +162,11 @@ tr.click:hover td { background: var(--surface-2); }
 .funnel-bar > div { height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
 .funnel-num { font-variant-numeric: tabular-nums; text-align: right; }
 .funnel-num .muted { margin-left: 6px; }
+.journey-pick { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.journey-pick button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-secondary); cursor: pointer; }
+.journey-pick button:hover { background: var(--surface-2); }
+.journey-pick button.on { background: var(--accent-wash); border-color: var(--accent); color: var(--text-primary); font-weight: 600; }
 
 /* Conversation explorer */
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }

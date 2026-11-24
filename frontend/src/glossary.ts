@@ -25,7 +25,8 @@ export const G: Record<string, string> = {
   unresolved: "Sessions whose flow state is still 'unresolved': Bookkr never settled on single flight, multi-city or another flow.",
   failure_msgs: "Sessions that contain at least one assistant failure message (kind = shared_failure).",
   where_stopped: "How many sessions ended at each stage, i.e. never went further.",
-  by_flow: "The funnel split by conversation flow from UnifiedChatFlowState.",
+  journey: "What the user came to do, one per chat, checked in this order: Trip planning (asked Bookkr to plan a trip: a plan card, the multi-city flow or a trip-planning intent), Flight + hotel (searched or asked for both), Round-trip flight, One-way flight, Hotel only. Chats with no search are classified from the intent Bookkr extracted. Not clear yet = no search and no usable intent.",
+  by_journey: "The funnel split by journey. Click a row to filter the page to it.",
 
   // Ops
   needs_attention: "Critical plus warning bookings. Critical = money taken but no ticket. Warning = stuck pending for more than 30 minutes, or booked but the confirmation email wasn't sent.",
