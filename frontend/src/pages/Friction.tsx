@@ -9,6 +9,7 @@ import {
 import Priorities, { RagPack } from "./FrictionReport";
 import { PageHeader, useSub } from "../nav";
 import JourneyPick, { useJourney } from "../JourneyPick";
+import Investigate from "./FrictionInvestigate";
 
 export { TYPE_LABEL };
 
@@ -474,6 +475,7 @@ export default function Friction() {
         <>
           {(sub.key === "brief" || sub.key === "issues" || sub.key === "patterns") && <Priorities view={sub.key} />}
           {sub.key === "queue" && <Queue status={status.data} onStatus={status.reload} />}
+          {sub.key === "investigate" && <Investigate journey={journey} />}
           {sub.key === "dataset" && <><RagPack /><Dataset /></>}
           {sub.key === "rules" && <Rules status={status.data} />}
         </>

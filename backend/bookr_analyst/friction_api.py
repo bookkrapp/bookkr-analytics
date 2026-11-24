@@ -370,6 +370,26 @@ def report(period: str = "week", start: str | None = None, journey: str | None =
     return rep
 
 
+@router.get("/investigation/preview")
+def investigation_preview(journey: str | None = None):
+    from .friction import investigation as INV
+    try:
+        return INV.preview(journey)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/investigation")
+def investigation_export(body: dict = Body(default={})):
+    """Friction log (JSONL) + investigation brief (Markdown) for the code-aware Claude. No LLM call."""
+    from .friction import investigation as INV
+    buckets = [b for b in (body.get("buckets") or []) if b in TX.BUCKETS] or None
+    try:
+        return INV.build(body.get("journey") or None, buckets, bool(body.get("include_closed")), body.get("by"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.post("/issues/group")
 def group_issues():
     if not J.llm_enabled():
