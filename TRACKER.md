@@ -67,6 +67,8 @@ Last updated: 2026-11-19
 | 2026-11-20 | Priorities are computed in SQL from item→issue links; Claude only names and groups issues and writes the brief. So every count on the page is exact and re-computable. |
 | 2026-11-20 | Priority score = users hit × average severity; top 3 = P1, next 7 = P2. Kept simple on purpose; booking and money impact is weighed in the brief. Revisit once the team has a feel for it. |
 | 2026-11-20 | The intent RAG pack needs no review: one rule per issue plus its 2–3 clearest examples (confidence ≥ 0.7). Agreed items rank first; "Not friction" and "Not an issue" are excluded. |
+| 2026-11-24 | LLM judging (and grouping, briefs, RAG pack) runs from a laptop on the Claude subscription via `scripts/run_day.py`, **only when the team asks**. No daily schedule, no `ANTHROPIC_API_KEY` on Render; the deployed app stays rules-only and shows what the laptop writes to the shared analyst DB. |
+| 2026-11-24 | Bookr Analyst never writes to `bookkrdb` (production). It has its own Neon analyst database; `db.py` refuses `bookkrdb`. |
 
 ## 5. Checklist for switching to production (tomorrow)
 
