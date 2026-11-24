@@ -197,11 +197,11 @@ def overview(days: int = 30, exclude_internal: bool = True):
 JOURNEYS = ("one_way", "round_trip", "flight_hotel", "hotel", "trip_plan", "unclear")
 
 
-def _need_journeys(con) -> None:
-    """session_facts gets journey_type from the sync. Until the first sync after this code ships, say so plainly."""
+def _need_journeys(con, column: str = "journey_type") -> None:
+    """New session_facts columns arrive with the next sync. Until then, say so plainly instead of a SQL error."""
     if not con.execute("""SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema()
-                          AND table_name = 'session_facts' AND column_name = 'journey_type'""").fetchone():
-        raise HTTPException(409, "The data was synced before journey types existed. Press Refresh data once to rebuild it.")
+                          AND table_name = 'session_facts' AND column_name = $c""", {"c": column}).fetchone():
+        raise HTTPException(409, "The data was synced before this report existed. Press Refresh data once to rebuild it.")
 
 
 @app.get("/api/funnel")
@@ -249,6 +249,52 @@ def funnel(days: int = 30, exclude_internal: bool = True, journey: str | None = 
                    count(*) FILTER (WHERE n_failure_msgs > 0) AS sessions_with_failures
             {base}""", p)
     return {"stages": stages, "by_journey": by_journey, "weekly": weekly, "ux": ux}
+
+
+@app.get("/api/funnel/planning")
+def planning(days: int = 30, exclude_internal: bool = True):
+    """Trip planning vs direct search: who asked Bookkr to plan a trip, how far they got, and how they convert."""
+    with connect() as con:
+        _need_journeys(con, "plan_shown")
+        w = _window(con, days)
+        p = {"s": w["start"], "e": w["end"], "x": exclude_internal}
+        every = "FROM session_facts WHERE created_at >= $s AND created_at < $e AND (NOT $x OR NOT is_internal)"
+        side = "CASE WHEN journey_type = 'trip_plan' THEN 'planned' WHEN journey_type = 'unclear' THEN 'unclear' ELSE 'direct' END"
+        compare = rows(con, f"""
+            SELECT {side} AS side, count(*) AS sessions, count(DISTINCT user_id) AS users,
+                   count(*) FILTER (WHERE n_flight_searches + n_hotel_searches > 0) AS searched,
+                   count(*) FILTER (WHERE n_flight_searches > 0) AS flight_searched,
+                   count(*) FILTER (WHERE n_hotel_searches > 0) AS hotel_searched,
+                   count(*) FILTER (WHERE stage_level >= 5) AS results_shown,
+                   count(*) FILTER (WHERE stage_level >= 6) AS booking_attempted,
+                   count(*) FILTER (WHERE stage_level >= 7) AS booked,
+                   coalesce(sum(gmv), 0) AS gmv,
+                   round(avg(n_user_msgs), 1) AS avg_user_msgs
+            {every} GROUP BY 1""", p)
+        steps = one(con, f"""
+            SELECT count(*) AS asked,
+                   count(*) FILTER (WHERE plan_shown) AS plan_shown,
+                   count(*) FILTER (WHERE plan_dates_picked) AS dates_picked,
+                   count(*) FILTER (WHERE n_flight_searches + n_hotel_searches > 0) AS searched,
+                   count(*) FILTER (WHERE stage_level >= 6) AS booking_attempted,
+                   count(*) FILTER (WHERE stage_level >= 7) AS booked
+            {every} AND journey_type = 'trip_plan'""", p)
+        both = one(con, f"""
+            SELECT count(*) FILTER (WHERE planned AND direct) AS both,
+                   count(*) FILTER (WHERE planned AND NOT direct) AS planned_only,
+                   count(*) FILTER (WHERE direct AND NOT planned) AS direct_only
+            FROM (SELECT user_id, bool_or(journey_type = 'trip_plan') AS planned,
+                         bool_or(journey_type NOT IN ('trip_plan', 'unclear')) AS direct
+                  {every} GROUP BY 1) u""", p)
+        weekly = rows(con, f"""
+            SELECT CAST(date_trunc('week', created_local) AS DATE) AS week,
+                   count(*) FILTER (WHERE journey_type = 'trip_plan') AS planned,
+                   count(*) FILTER (WHERE journey_type NOT IN ('trip_plan', 'unclear')) AS direct
+            {every} GROUP BY 1 ORDER BY 1""", p)
+    labels = [("asked", "Asked for a trip plan"), ("plan_shown", "Plan ideas shown"), ("dates_picked", "Dates picked"),
+              ("searched", "Flights or hotels searched"), ("booking_attempted", "Booking attempted"), ("booked", "Booked")]
+    funnel_steps = [{"key": k, "name": n, "sessions": (steps or {}).get(k, 0)} for k, n in labels]
+    return {"compare": compare, "steps": funnel_steps, "users": both, "weekly": weekly}
 
 
 # Booking & payment ops ------------------------------------------------------

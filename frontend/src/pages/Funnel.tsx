@@ -4,6 +4,7 @@ import { useApi } from "../api";
 import { Bars, Card, ErrorBox, Info, Kpi, Loading, Table, TimeLines } from "../components";
 import { fmtNum } from "../format";
 import { JOURNEYS, JOURNEY_LABEL } from "../journeys";
+import PlanningVsDirect from "./PlanningVsDirect";
 
 export default function Funnel() {
   const [journey, setJourney] = useState("");
@@ -96,6 +97,8 @@ export default function Funnel() {
           ]}
         />
       </Card>
+
+      <PlanningVsDirect />
     </>
   );
 }

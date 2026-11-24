@@ -26,7 +26,16 @@ export const G: Record<string, string> = {
   failure_msgs: "Sessions that contain at least one assistant failure message (kind = shared_failure).",
   where_stopped: "How many sessions ended at each stage, i.e. never went further.",
   journey: "What the user came to do, one per chat, checked in this order: Trip planning (asked Bookkr to plan a trip: a plan card, the multi-city flow or a trip-planning intent), Flight + hotel (searched or asked for both), Round-trip flight, One-way flight, Hotel only. Chats with no search are classified from the intent Bookkr extracted. Not clear yet = no search and no usable intent.",
-  by_journey: "The funnel split by journey. Click a row to filter the page to it.",
+  planning_vs_direct: "Planned = the chat's journey is Trip planning (Bookkr was asked to plan a trip). Searched directly = one-way, round-trip, flight + hotel or hotel-only journeys. Chats where the goal isn't clear yet are left out of both.",
+  planned_chats: "Chats where the user asked Bookkr to plan a trip (a plan card, the multi-city flow, a trip-planning intent or a trip-plan panel).",
+  direct_chats: "Chats that went straight to flights or hotels without a trip plan.",
+  plan_to_search: "Share of planning chats where a flight or hotel search ran afterwards.",
+  plan_booked: "Share of chats that ended in a booked flight, planning chats vs direct-search chats. Hotel bookings aren't synced yet.",
+  plan_both_users: "Users with at least one planning chat AND at least one direct-search chat in this range.",
+  plan_funnel: "Each step counts planning chats that got at least that far. The % is the share of the previous step. Plan ideas shown = itinerary options card or trip-plan panel. Dates picked = the dates card for a chosen plan, or the plan reached the dates/flights phase.",
+  plan_weekly: "New chats per week (IST weeks starting Monday), split by planning vs direct search.",
+  plan_compare: "The two groups side by side. Searched flights and Searched hotels can both count the same chat.",
+  by_journey:"The funnel split by journey. Click a row to filter the page to it.",
 
   // Ops
   needs_attention: "Critical plus warning bookings. Critical = money taken but no ticket. Warning = stuck pending for more than 30 minutes, or booked but the confirmation email wasn't sent.",

@@ -117,6 +117,14 @@ def build(con) -> None:
                      OR EXISTS (SELECT 1 FROM json_array_elements_text(coalesce(s.panel_card_types, '[]'::json)) pc(t)
                                 WHERE pc.t = 'trip_plan_options')
                      AS is_trip_plan,
+                   -- trip-planning steps: plan ideas shown, then dates picked for a chosen plan
+                   coalesce(m.has_plan_card, false)
+                     OR EXISTS (SELECT 1 FROM json_array_elements_text(coalesce(s.panel_card_types, '[]'::json)) pc(t)
+                                WHERE pc.t = 'trip_plan_options')
+                     AS plan_shown,
+                   coalesce(m.has_plan_dates_card, false)
+                     OR coalesce(f.multi_city_state->>'phase' IN ('dates_generated', 'flights_shown'), false)
+                     AS plan_dates_picked,
                    coalesce(fs.any_round_trip_search, false) AS any_round_trip_search,
                    coalesce(it.has_hotel_intent, false) AS has_hotel_intent,
                    coalesce(it.has_flight_intent, false) AS has_flight_intent,
