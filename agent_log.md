@@ -31,3 +31,13 @@ Append-only. Newest at the bottom. See `CLAUDE.md`.
 **Notes:** Tested date checks and one CLI model call; a full day was not run through the script. README Friction Finder section updated.
 
 **Files:** `README.md`, `agent_log.md`, `backend/scripts/run_day.py`
+
+---
+
+## 2026-11-24 22:10 IST · `main`
+
+**Summary:** Cloned the repo onto the Windows laptop (Git 2.56 via winget); first push from this machine
+
+**Notes:** No code changed. Local .env not set up yet.
+
+**Files:** _none in the working tree — already committed?_
