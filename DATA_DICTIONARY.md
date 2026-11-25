@@ -229,6 +229,31 @@ What it stores: one row per booking attempt, from fare lock through payment to t
 
 ---
 
+### 2.10 Copied for ops-board parity (2026-11-25, TRACKER R15)
+
+What `sync.py` copies, and what it deliberately leaves behind. Free-text reasons are regex-masked (`masking.py`).
+
+| Analytics table | Source | Columns copied | Never copied |
+|---|---|---|---|
+| `raw_hotel_bookings` | `HotelBookingState` | id, user/chat ids, status, amount (paise), currency, wallet amount, refund amount, cancellation charge, hold flag, failure reason (masked), payment order id, stay city, created/updated/cancelled/book-requested times | travellers, contact, GSTIN, voucher URL, Razorpay ids on the booking, details JSON |
+| `raw_payment_orders` | `payments.PaymentOrder` | id, Razorpay order id, amount, currency, status, reference type/id (booking), user id, created/updated/authorized/captured/voided times | receipt, notes |
+| `raw_payment_txns` | `payments.PaymentTransaction` | id, order id, Razorpay payment id, status, method, amount, currency, fee, tax, error code/description (masked)/source, times | card last 4, card network, bank, VPA, wallet |
+| `raw_refunds` | `payments.Refund` | id, transaction/order id, amount, status, reason (masked), initiated by, speed, initiated/processed/failed times, failure reason (masked) | Razorpay refund id, notes |
+| `raw_payment_webhooks` | `payments.WebhookEvent` | event, Razorpay order id, payment id, status, amount (lifted out of the payload in the source query), received time | the payload itself (payer email, phone), signature |
+| `raw_wallets` | `Wallet` | id, user id, balances (any / flight / hotel, paise), currency, times | |
+| `raw_wallet_entries` | `WalletEntry` | id, wallet id, kind, status, amount, reference type/id, bucket, restricted amount, times | admin user id, note, idempotency key |
+| `raw_support_tickets` | `SupportTicket` | id, number, user id, priority, status, source, unread flag, last message / closed / created / updated times | subject, messages, closing admin |
+| `raw_hotel_sync_runs` | `HotelCatalogueSyncRun` | id, trigger, status, start/finish, hotels, cities, content missing, error (first 400 chars, masked) | admin who started it, countries |
+| `raw_user_days` | `AnalyticsEvent` (aggregated in the source query) | user id, IST day, platform (web/app/other), events a person caused, "engaged" events, first/last event time | event properties, IP, location |
+| `raw_checkout_events` | `AnalyticsEvent` (booking_step_viewed/completed, payment_checkout_opened, booking_confirmed) | id, event, user id, chat id, booking attempt id, step, product, skipped, booking id/status, platform, time | other properties |
+| `raw_server_errors` | `AnalyticsEvent` (server_error, request_rejected) | id, event, user id, platform, method, status, error type, path (ids replaced by `:id`, query string dropped), time | messages, request bodies |
+| `raw_visits` | `SourceVisit` | id, visitor id, source, referrer host, landing path (no query string), time | raw source text |
+| `raw_attribution` | `AnalyticsEvent` (visit_attributed) | id, user id, platform, UTM source/medium/campaign (masked), source, referrer host, landing path (no query string), time | other properties |
+
+`raw_flight_bookings` also gains `payment_order_id` and `payment_transaction_id` (ids only), to tie bookings to Razorpay.
+Derived: `bookings_all` (flights + hotels in one table: confirmed / cancelled / failed / abandoned, value incl. wallet,
+wallet share, airline, route, city).
+
 ## 3. Funnel snapshot (all-time, by chat session)
 
 | Stage | Sessions | % of sessions |

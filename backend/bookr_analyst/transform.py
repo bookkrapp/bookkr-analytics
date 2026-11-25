@@ -200,6 +200,33 @@ def build(con) -> None:
         CROSS JOIN meta
         LEFT JOIN users u ON u.user_id = b.user_id
     """)
+    # Flights and hotels in one table (ops board parity, TRACKER R15). Definitions as the old ops board:
+    # confirmed = flight BOOKED/TICKETED, hotel CONFIRMED; a flight checkout the traveller walked away from is
+    # "abandoned", not failed; value = full price incl. the wallet's share (GBV); hotel amounts and every wallet
+    # amount are paise, flight amountPayable is rupees.
+    con.execute(f"""
+        CREATE TABLE bookings_all AS
+        SELECT 'flight' AS product, b.id, b.user_id, b.chat_session_id, b.status, b.payment_status,
+               b.status IN ('BOOKED', 'TICKETED') AS confirmed, b.status = 'CANCELLED' AS cancelled,
+               b.status = 'FAILED' AND b.failure_reason IS DISTINCT FROM 'User abandoned payment' AS failed,
+               b.status = 'FAILED' AND b.failure_reason = 'User abandoned payment' AS abandoned,
+               CAST(b.amount_payable AS float8) AS value_inr, coalesce(b.wallet_amount, 0) / 100.0 AS wallet_inr,
+               coalesce(b.currency, 'INR') AS currency, nullif(trim(b.airline), '') AS airline,
+               CASE WHEN b.origin IS NOT NULL THEN b.origin || ' → ' || b.destination END AS route, NULL::text AS city,
+               b.payment_order_id, b.failure_reason, b.created_at, b.updated_at,
+               b.created_at + INTERVAL '{off} minutes' AS created_local
+        FROM raw_flight_bookings b
+        UNION ALL
+        SELECT 'hotel', h.id, h.user_id, h.chat_session_id, h.status, NULL,
+               h.status = 'CONFIRMED', h.status = 'CANCELLED', h.status IN ('FAILED', 'ABORTED'), false,
+               coalesce(h.amount, 0) / 100.0, coalesce(h.wallet_amount, 0) / 100.0, coalesce(h.currency, 'INR'),
+               NULL, NULL, nullif(h.city, ''), h.payment_order_id, h.failure_reason, h.created_at, h.updated_at,
+               h.created_at + INTERVAL '{off} minutes'
+        FROM raw_hotel_bookings h
+    """)
+    con.execute("ALTER TABLE bookings_all ADD COLUMN is_internal boolean")
+    con.execute("UPDATE bookings_all b SET is_internal = coalesce(u.is_internal, false) FROM users u WHERE u.user_id = b.user_id")
+    con.execute("UPDATE bookings_all SET is_internal = false WHERE is_internal IS NULL")
     _index(con, DERIVED_INDEXES)
 
 
@@ -223,9 +250,17 @@ RAW_INDEXES = [
     ("raw_intents", "chat_session_id"), ("raw_flow_state", "chat_session_id"), ("raw_feedback", "chat_session_id"),
     ("raw_llm_calls", "chat_session_id"), ("raw_llm_calls", "created_at"),
     ("raw_analytics_events", "chat_session_id"), ("raw_analytics_events", "user_id, event_at"),
+    ("raw_payment_txns", "order_id"), ("raw_payment_txns", "created_at"), ("raw_payment_orders", "id"),
+    ("raw_payment_orders", "razorpay_order_id"), ("raw_payment_webhooks", "razorpay_order_id"),
+    ("raw_payment_webhooks", "razorpay_payment_id"), ("raw_refunds", "transaction_id"),
+    ("raw_wallets", "id"), ("raw_wallet_entries", "wallet_id"), ("raw_wallet_entries", "reference_id"),
+    ("raw_user_days", "day"), ("raw_user_days", "user_id, day"), ("raw_checkout_events", "event_at"),
+    ("raw_checkout_events", "booking_attempt_id"), ("raw_server_errors", "event_at"), ("raw_visits", "created_at"),
+    ("raw_attribution", "user_id"),
 ]
 DERIVED_INDEXES = [
     ("session_facts", "session_id"), ("session_facts", "user_id"), ("session_facts", "created_at"),
     ("session_facts", "journey_type, created_at"),
     ("booking_ops", "chat_session_id"), ("booking_ops", "user_id"), ("booking_ops", "created_at"),
+    ("bookings_all", "created_at"), ("bookings_all", "payment_order_id"), ("bookings_all", "chat_session_id"),
 ]

@@ -113,6 +113,7 @@ EXTRACTS: dict[str, tuple[str, list[str], list[str]]] = {
                "createdAt" as created_at, "updatedAt" as updated_at, "ticketedAt" as ticketed_at,
                "cancelledAt" as cancelled_at, "confirmationEmailSentAt" as confirmation_email_sent_at,
                ("paymentOrderId" is not null) as has_payment_order,
+               "paymentOrderId" as payment_order_id, "paymentTransactionId" as payment_transaction_id,
                "fareSnapshotJson"->>'fareName' as fare_name,
                "fareSnapshotJson"->>'isLcc' as is_lcc,
                "fareSnapshotJson"->'tripInfo'->0->>'from' as origin,
@@ -152,6 +153,122 @@ EXTRACTS: dict[str, tuple[str, list[str], list[str]]] = {
           and ("eventName" <> 'feature_used'
                or properties->>'feature' in ('reply_chips', 'flight_filters', 'flight_sort', 'hotel_filters', 'hotel_sort'))
         """, [], ["properties"]),
+
+    # --- Ops board parity (TRACKER R15): hotels, payments, wallet, support, app events, traffic sources -------------
+    # Only ids, statuses, amounts and times. Traveller details, contact, GST, card/UPI details, ticket subjects and
+    # webhook payloads are never copied; free-text reasons are regex-masked.
+    "raw_hotel_bookings": ("""
+        select id, "userId" as user_id, "chatSessionId" as chat_session_id, status::text as status,
+               amount, currency, "walletAmount" as wallet_amount, "refundAmount" as refund_amount,
+               "cancellationCharge" as cancellation_charge, "isHold" as is_hold, "failureReason" as failure_reason,
+               "paymentOrderId" as payment_order_id, trim(split_part(stay->>'city', ',', 1)) as city,
+               "createdAt" as created_at, "updatedAt" as updated_at, "cancelledAt" as cancelled_at,
+               "bookRequestedAt" as book_requested_at
+        from "HotelBookingState" """, ["failure_reason"], []),
+
+    "raw_payment_orders": ("""
+        select id, "razorpayOrderId" as razorpay_order_id, amount, currency, status::text as status,
+               "referenceType"::text as reference_type, "referenceId" as reference_id, "userId" as user_id,
+               "createdAt" as created_at, "updatedAt" as updated_at, "authorizedAt" as authorized_at,
+               "capturedAt" as captured_at, "voidedAt" as voided_at
+        from payments."PaymentOrder" """, [], []),
+
+    "raw_payment_txns": ("""
+        select id, "orderId" as order_id, "razorpayPaymentId" as razorpay_payment_id, status::text as status,
+               lower(method) as method, amount, currency, fee, tax, "errorCode" as error_code,
+               "errorDescription" as error_description, "errorSource" as error_source,
+               "createdAt" as created_at, "updatedAt" as updated_at
+        from payments."PaymentTransaction" """, ["error_description"], []),
+
+    "raw_refunds": ("""
+        select id, "transactionId" as transaction_id, "orderId" as order_id, amount, status::text as status,
+               reason, "initiatedBy"::text as initiated_by, speed::text as speed, "initiatedAt" as initiated_at,
+               "processedAt" as processed_at, "failedAt" as failed_at, "failureReason" as failure_reason,
+               "createdAt" as created_at
+        from payments."Refund" """, ["reason", "failure_reason"], []),
+
+    # Razorpay webhooks: only the event, ids, status and amount are lifted out; the payload (payer email/phone) never is.
+    "raw_payment_webhooks": ("""
+        select id, event,
+               coalesce(payload #>> '{payload,payment,entity,order_id}', payload #>> '{payload,order,entity,id}') as razorpay_order_id,
+               coalesce(payload #>> '{payload,payment,entity,id}', payload #>> '{payload,refund,entity,payment_id}') as razorpay_payment_id,
+               coalesce(payload #>> '{payload,payment,entity,status}', payload #>> '{payload,refund,entity,status}') as status,
+               coalesce(payload #>> '{payload,payment,entity,amount}', payload #>> '{payload,refund,entity,amount}')::bigint as amount,
+               "receivedAt" as received_at
+        from payments."WebhookEvent" """, [], []),
+
+    "raw_wallets": ("""
+        select id, "userId" as user_id, coalesce("anyBalance", 0) as any_balance, coalesce("flightBalance", 0) as flight_balance,
+               coalesce("hotelBalance", 0) as hotel_balance, currency, "createdAt" as created_at, "updatedAt" as updated_at
+        from "Wallet" """, [], []),
+
+    "raw_wallet_entries": ("""
+        select id, "walletId" as wallet_id, kind::text as kind, status::text as status, amount,
+               "referenceType"::text as reference_type, "referenceId" as reference_id, bucket::text as bucket,
+               "restrictedAmount" as restricted_amount, "createdAt" as created_at, "updatedAt" as updated_at
+        from "WalletEntry" """, [], []),
+
+    "raw_support_tickets": ("""
+        select id, number, "userId" as user_id, priority::text as priority, status::text as status, source::text as source,
+               "userUnread" as user_unread, "lastMessageAt" as last_message_at, "closedAt" as closed_at,
+               "createdAt" as created_at, "updatedAt" as updated_at
+        from "SupportTicket" """, [], []),
+
+    "raw_hotel_sync_runs": ("""
+        select id, trigger::text as trigger, status::text as status, "startedAt" as started_at, "finishedAt" as finished_at,
+               "totalHotels" as total_hotels, "indexedCities" as indexed_cities, "contentMissingCount" as content_missing_count,
+               left(error, 400) as error
+        from "HotelCatalogueSyncRun" """, ["error"], []),
+
+    # Activity per user per IST day and platform, from every app event. Same rules as the old ops board:
+    # `events` leaves out what no person caused; `engaged` also leaves out loads, views, sign-in steps.
+    "raw_user_days": ("""
+        select "userId" as user_id, ("eventAt" + interval '330 minutes')::date as day,
+               case when platform in ('ios', 'android', 'mobile') then 'app' when platform = 'web' then 'web' else 'other' end as platform,
+               count(*) filter (where "eventName" not in ('client_error', 'server_error', 'request_rejected', 'app_backgrounded',
+                                                         'booking_confirmed', 'booking_failed')) as events,
+               count(*) filter (where "eventName" not in ('client_error', 'server_error', 'request_rejected', 'app_backgrounded',
+                   'booking_confirmed', 'booking_failed', 'session_ended', 'app_loaded', 'page_view', 'screen_view', 'app_opened',
+                   'feature_seen', 'booking_price_changed', 'booking_fare_expired', 'login_started', 'login_success',
+                   'login_failed', 'google_signin_clicked', 'signin_completed', 'signup_started', 'signup_initiated',
+                   'signup_success', 'sign_up', 'signup_completed', 'signup_failed', 'logout', 'get_app_banner_shown',
+                   'get_app_modal_shown', 'visit_attributed')) as engaged,
+               min("eventAt") as first_at, max("eventAt") as last_at
+        from "AnalyticsEvent" where "userId" is not null group by 1, 2, 3""", [], []),
+
+    # Checkout steps (fare → travellers → … → payment) and confirmations, each tied to its chat and booking attempt.
+    "raw_checkout_events": ("""
+        select id, "eventName" as event_name, "userId" as user_id,
+               coalesce("chatSessionId", properties->>'chat_session_id') as chat_session_id,
+               properties->>'booking_attempt_id' as booking_attempt_id, properties->>'step' as step,
+               coalesce(properties->>'product', properties->>'kind') as product,
+               coalesce(properties->>'skipped', 'false') = 'true' as skipped,
+               properties->>'booking_id' as booking_id, properties->>'status' as booking_status,
+               platform, "eventAt" as event_at
+        from "AnalyticsEvent"
+        where "eventName" in ('booking_step_viewed', 'booking_step_completed', 'payment_checkout_opened', 'booking_confirmed')
+        """, [], []),
+
+    # Server errors (5xx) and rejected requests (4xx) by endpoint. Ids in paths become :id, query strings are dropped.
+    "raw_server_errors": ("""
+        select id, "eventName" as event_name, "userId" as user_id, platform, properties->>'method' as method,
+               (properties->>'status') as status, properties->>'error_type' as error_type,
+               regexp_replace(split_part(coalesce(properties->>'path', ''), '?', 1),
+                              '/([a-z0-9]{20,}|[0-9a-f-]{32,}|[0-9]+)(?=/|$)', '/:id', 'g') as path,
+               "eventAt" as event_at
+        from "AnalyticsEvent" where "eventName" in ('server_error', 'request_rejected')""", [], []),
+
+    # Where visitors come from: every landing (SourceVisit) and the UTM tags of signed-in visits.
+    "raw_visits": ("""
+        select id, "visitorId" as visitor_id, coalesce(source, 'direct / unknown') as source, "referrerHost" as referrer_host,
+               split_part(coalesce("landingPath", ''), '?', 1) as landing_path, "createdAt" as created_at
+        from "SourceVisit" """, [], []),
+    "raw_attribution": ("""
+        select id, "userId" as user_id, platform, properties->>'utm_source' as utm_source,
+               properties->>'utm_medium' as utm_medium, properties->>'utm_campaign' as utm_campaign,
+               properties->>'source' as source, properties->>'referrer_host' as referrer_host,
+               split_part(coalesce(properties->>'landing_path', ''), '?', 1) as landing_path, "eventAt" as event_at
+        from "AnalyticsEvent" where "eventName" = 'visit_attributed'""", ["utm_campaign"], []),
 }
 # SYNC_SINCE (.env): only rows whose time column is on/after it are copied. Users are always copied in full
 # (they are a small lookup table). Chats and bookings use updated_at so older ones with new activity come along.
@@ -160,10 +277,44 @@ SINCE_COLUMN = {
     "raw_flow_state": "updated_at", "raw_flight_searches": "created_at", "raw_flight_search_results": "created_at",
     "raw_hotel_searches": "created_at", "raw_hotel_search_results": "created_at", "raw_flight_bookings": "updated_at",
     "raw_llm_calls": "created_at", "raw_feedback": "created_at", "raw_analytics_events": "event_at",
+    "raw_hotel_bookings": "updated_at", "raw_user_days": "day", "raw_checkout_events": "event_at",
+    "raw_server_errors": "event_at", "raw_visits": "created_at", "raw_attribution": "event_at",
+    # payments, wallets, support and sync runs are small and copied in full (balances and backlogs need all of it)
 }
 # Tables that may not exist in every source database (older schema): an empty table is created instead.
-OPTIONAL = {"raw_analytics_events": ["id", "event_name", "user_id", "chat_session_id", "message_id", "event_at",
-                                     "source", "platform", "app_version", "properties"]}
+# A column is a name (text) or (name, type).
+_T, _N, _B = "timestamp", "bigint", "boolean"
+OPTIONAL = {
+    "raw_analytics_events": ["id", "event_name", "user_id", "chat_session_id", "message_id", ("event_at", _T),
+                             "source", "platform", "app_version", ("properties", "json")],
+    "raw_hotel_bookings": ["id", "user_id", "chat_session_id", "status", ("amount", _N), "currency", ("wallet_amount", _N),
+                           ("refund_amount", _N), ("cancellation_charge", _N), ("is_hold", _B), "failure_reason",
+                           "payment_order_id", "city", ("created_at", _T), ("updated_at", _T), ("cancelled_at", _T),
+                           ("book_requested_at", _T)],
+    "raw_payment_orders": ["id", "razorpay_order_id", ("amount", _N), "currency", "status", "reference_type", "reference_id",
+                           "user_id", ("created_at", _T), ("updated_at", _T), ("authorized_at", _T), ("captured_at", _T),
+                           ("voided_at", _T)],
+    "raw_payment_txns": ["id", "order_id", "razorpay_payment_id", "status", "method", ("amount", _N), "currency", ("fee", _N),
+                         ("tax", _N), "error_code", "error_description", "error_source", ("created_at", _T), ("updated_at", _T)],
+    "raw_refunds": ["id", "transaction_id", "order_id", ("amount", _N), "status", "reason", "initiated_by", "speed",
+                    ("initiated_at", _T), ("processed_at", _T), ("failed_at", _T), "failure_reason", ("created_at", _T)],
+    "raw_payment_webhooks": ["id", "event", "razorpay_order_id", "razorpay_payment_id", "status", ("amount", _N), ("received_at", _T)],
+    "raw_wallets": ["id", "user_id", ("any_balance", _N), ("flight_balance", _N), ("hotel_balance", _N), "currency",
+                    ("created_at", _T), ("updated_at", _T)],
+    "raw_wallet_entries": ["id", "wallet_id", "kind", "status", ("amount", _N), "reference_type", "reference_id", "bucket",
+                           ("restricted_amount", _N), ("created_at", _T), ("updated_at", _T)],
+    "raw_support_tickets": ["id", ("number", _N), "user_id", "priority", "status", "source", (("user_unread"), _B),
+                            ("last_message_at", _T), ("closed_at", _T), ("created_at", _T), ("updated_at", _T)],
+    "raw_hotel_sync_runs": ["id", "trigger", "status", ("started_at", _T), ("finished_at", _T), ("total_hotels", _N),
+                            ("indexed_cities", _N), ("content_missing_count", _N), "error"],
+    "raw_user_days": ["user_id", ("day", "date"), "platform", ("events", _N), ("engaged", _N), ("first_at", _T), ("last_at", _T)],
+    "raw_checkout_events": ["id", "event_name", "user_id", "chat_session_id", "booking_attempt_id", "step", "product",
+                            ("skipped", _B), "booking_id", "booking_status", "platform", ("event_at", _T)],
+    "raw_server_errors": ["id", "event_name", "user_id", "platform", "method", "status", "error_type", "path", ("event_at", _T)],
+    "raw_visits": ["id", "visitor_id", "source", "referrer_host", "landing_path", ("created_at", _T)],
+    "raw_attribution": ["id", "user_id", "platform", "utm_source", "utm_medium", "utm_campaign", "source", "referrer_host",
+                        "landing_path", ("event_at", _T)],
+}
 
 
 BUILD_SCHEMA = f"{ANALYTICS_SCHEMA}_build"
@@ -264,9 +415,10 @@ def run_sync() -> dict:
                     try:
                         with src.transaction(), tgt.transaction():  # savepoints: a missing table must not abort the snapshot
                             counts[name] = _extract(src, tgt, name, sql, text_cols, json_cols, since_col)
-                    except psycopg.errors.UndefinedTable:
-                        create_table(tgt, name, [(c, "timestamp" if c == "event_at" else "json" if c in json_cols else "text")
-                                                 for c in OPTIONAL[name]])
+                    except (psycopg.errors.UndefinedTable, psycopg.errors.InvalidSchemaName,
+                            psycopg.errors.InsufficientPrivilege, psycopg.errors.UndefinedColumn):
+                        # older schema, or the read-only role can't see it: an empty table, so pages read "no data"
+                        create_table(tgt, name, [c if isinstance(c, tuple) else (c, "text") for c in OPTIONAL[name]])
                         counts[name] = 0
         synced_at = datetime.now(timezone.utc).replace(tzinfo=None)
         host = urlparse(settings.source_database_url).hostname or ""
