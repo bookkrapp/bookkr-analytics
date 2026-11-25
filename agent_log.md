@@ -51,3 +51,13 @@ Append-only. Newest at the bottom. See `CLAUDE.md`.
 **Notes:** Tested against the 20 Nov prod snapshot loaded into a local Postgres; judge and Ask tested via the Claude subscription. Docker build not run. Render needs Refresh data once and ANTHROPIC_API_KEY for Ask.
 
 **Files:** `TRACKER.md`
+
+---
+
+## 2026-11-25 19:57 IST · `main`
+
+**Summary:** Ops-board parity: 14 new synced tables, date range presets with previous period, Bookings & money, Needs action, Payments, Support, Checkout steps, Growth, audience, Quality, service checks, Feature tracker (342bce4, ea0bc75, 1d87c5c)
+
+**Notes:** Tested on a local Postgres synced read-only from production on 25 Nov. Shared analyst DB needs one sync for the new tables. Service checks need their env vars on Render.
+
+**Files:** _none in the working tree — already committed?_
