@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { Bars, Card, ErrorBox, Info, Kpi, Loading, Table, TimeLines } from "../components";
-import { fmtINR, fmtINRShort, fmtNum, fmtUSD } from "../format";
+import { Card, ErrorBox, Info, Kpi, Loading, Table, TimeLines } from "../components";
+import { fmtINR, fmtNum, fmtUSD } from "../format";
 import { PageHeader, useSub } from "../nav";
-
-const dayFmt = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+import { MoneyPage, TopBooked } from "./Money";
+import { NeedsActionStrip } from "./NeedsAction";
 
 export default function Overview() {
   const sub = useSub("/overview");
@@ -21,6 +21,7 @@ export default function Overview() {
 
       {sub.key === "summary" && (
         <>
+          <NeedsActionStrip />
           {ops.critical > 0 && (
             <div className="alert">
               <span className="badge sev-critical"><span className="dot" />Critical</span>
@@ -61,27 +62,7 @@ export default function Overview() {
         </>
       )}
 
-      {sub.key === "bookings" && (
-        <>
-          <div className="kpis">
-            <Kpi label="Bookings (flights)" info="bookings" value={fmtNum(k.bookings)} cur={k.bookings} prev={p.bookings}
-                 sub={`${fmtNum(k.booking_attempts)} attempts`} />
-            <Kpi label="GMV" info="gmv" value={fmtINR(k.gmv)} cur={k.gmv} prev={p.gmv} />
-            <Kpi label="Avg booking value" value={fmtINR(k.avg_booking_value)} cur={k.avg_booking_value} prev={p.avg_booking_value} />
-            <Kpi label="Chat → booking" info="conversion" value={`${k.conversion_pct}%`} cur={k.conversion_pct} prev={p.conversion_pct}
-                 sub={`${k.sessions_booked} of ${k.sessions} sessions`} />
-          </div>
-          <div className="grid g2">
-            <Card title="Daily bookings" info="bookings">
-              <Bars data={data.daily} x="date" xFmt={dayFmt} series={[{ key: "bookings", label: "Bookings", color: "var(--series-1)" }]} />
-            </Card>
-            <Card title="Daily GMV (₹)" info="gmv">
-              <TimeLines data={data.daily} series={[{ key: "gmv", label: "GMV", color: "var(--series-1)" }]} fmt={fmtINR} yFmt={fmtINRShort} />
-            </Card>
-          </div>
-          <div className="muted small">Hotel bookings aren't synced yet, so these are flight bookings only. Stuck or failed payments are on <Link to="/ops/attention">Booking &amp; payment ops</Link>.</div>
-        </>
-      )}
+      {sub.key === "bookings" && <MoneyPage />}
 
       {sub.key === "demand" && (
         <>
@@ -89,6 +70,9 @@ export default function Overview() {
             <Kpi label="Flight searches" info="flight_searches" value={fmtNum(k.flight_searches)} cur={k.flight_searches} prev={p.flight_searches} />
             <Kpi label="Hotel searches" info="hotel_searches" value={fmtNum(k.hotel_searches)} cur={k.hotel_searches} prev={p.hotel_searches} />
           </div>
+          <h3 className="sec-h">What people booked</h3>
+          <TopBooked />
+          <h3 className="sec-h">What people searched for</h3>
           <div className="grid g2">
             <Card title="Top flight routes searched" info="top_routes">
               <Table rows={data.top_routes} cols={[

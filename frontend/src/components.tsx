@@ -3,6 +3,7 @@ import {
   Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { delta, fmtDate } from "./format";
+import { useFilters } from "./filters";
 import { G } from "./glossary";
 
 /** ⓘ button: hover, focus or tap to read what a metric means. `k` is a glossary key, or pass `text`. */
@@ -90,6 +91,81 @@ export function Kpi({ label, value, cur, prev, sub, invert, info }: {
           sub ?? <span>&nbsp;</span>
         )}
       </div>
+    </div>
+  );
+}
+
+/** A number compared with the previous period, as the API sends it: { value, prev, change }. */
+export type Cmp = { value: any; prev: any; change: string | null } | null | undefined;
+
+/**
+ * KPI tile for a compared number. The change is neutral (no green/red): up isn't good for failures.
+ * `onClick` makes the tile a drill-down.
+ */
+export function KpiC({ label, n, fmt = (v) => String(v ?? "—"), sub, info, onClick, tone }: {
+  label: string; n: Cmp; fmt?: (v: any) => ReactNode; sub?: ReactNode; info?: string; onClick?: () => void;
+  tone?: "bad" | "warn" | "good";
+}) {
+  const v = n?.value;
+  const body = (
+    <>
+      <div className="label">{label}{info && <Info k={info} />}</div>
+      <div className={`value${tone ? " tone-" + tone : ""}`}>{v === null || v === undefined ? "—" : fmt(v)}</div>
+      <div className="sub">
+        {n?.change ? <span className="chg" title={`Previous period: ${n.prev ?? "—"}`}>{n.change} vs previous</span> : null}
+        {sub && <span>{n?.change ? " · " : ""}{sub}</span>}
+        {!n?.change && !sub && <span>&nbsp;</span>}
+      </div>
+    </>
+  );
+  return onClick ? (
+    <button type="button" className="kpi kpi-click" onClick={onClick} title="Show the rows behind this number">{body}<span className="drill-hint">↘</span></button>
+  ) : <div className="kpi">{body}</div>;
+}
+
+export type DrillSpec = { title: string; path: string; params?: Record<string, any>; cols: TableCol[]; note?: ReactNode;
+  rowLink?: (r: any) => string | null; useRange?: boolean };
+export type TableCol = { key: string; label: string; num?: boolean; info?: string; render?: (r: any) => ReactNode };
+
+/** Drill-down drawer: loads the rows behind a number and links each to its chat or detail page. */
+export function DrillDrawer({ spec, onClose }: { spec: DrillSpec | null; onClose: () => void }) {
+  const { rangeParams, excludeInternal } = useFilters();
+  const [data, setData] = useState<any[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!spec) return;
+    setData(null); setErr(null);
+    const qs = new URLSearchParams();
+    const params: Record<string, any> = { ...(spec.useRange === false ? {} : rangeParams()), exclude_internal: excludeInternal, ...(spec.params ?? {}) };
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
+    fetch(`${spec.path}?${qs}`).then(async (r) => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail ?? r.statusText);
+      setData(d.items ?? d);
+    }).catch((e) => setErr(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec]);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [onClose]);
+  if (!spec) return null;
+  return (
+    <div className="drawer-back" onClick={onClose}>
+      <aside className="drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={spec.title}>
+        <div className="drawer-head">
+          <h2>↘ {spec.title}</h2>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+        {spec.note && <div className="muted small" style={{ marginBottom: 8 }}>{spec.note}</div>}
+        {err ? <div className="error">{err}</div> : !data ? <Loading /> : (
+          <>
+            <div className="muted small" style={{ marginBottom: 6 }}>{data.length} rows{data.length >= 200 ? " (newest 200)" : ""} · click a row to open it</div>
+            <Table rows={data} cols={spec.cols} onRow={spec.rowLink ? (r) => { const to = spec.rowLink!(r); if (to) window.open(to, "_blank"); } : undefined} />
+          </>
+        )}
+      </aside>
     </div>
   );
 }

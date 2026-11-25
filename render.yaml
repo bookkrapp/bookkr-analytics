@@ -34,3 +34,24 @@ services:
         value: api           # the Claude Code CLI login is not available in the container
       - key: FRICTION_USE_LLM
         value: auto
+      # Quality > Operations service checks (optional; a service reads NOT SET UP until its value is set)
+      - key: BACKEND_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: TRAVEL_GATEWAY_BASE_URL
+        sync: false
+      - key: TRAVEL_GATEWAY_JWT_SECRET
+        sync: false
+      - key: TRAVEL_GATEWAY_JWT_ISSUER
+        sync: false
+      - key: PAYMENTS_SERVICE_URL
+        sync: false
+      - key: SERP_API_KEY
+        sync: false
+      - key: SEARCH_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false

@@ -3,6 +3,7 @@ import { useApi } from "../api";
 import { Bars, Card, ErrorBox, Info, Kpi, Loading, Table } from "../components";
 import { fmtDate, fmtINR, fmtNum, shortId } from "../format";
 import { PageHeader, useSub } from "../nav";
+import { AudienceActivity, AudienceRetention } from "./Audience";
 
 const WEEKS = [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -41,6 +42,8 @@ export default function Users() {
       )}
 
       {sub.key === "activity" && (<>
+      <AudienceActivity />
+      <h3 className="sec-h">From chats (a user counts as active on a day if they send a message)</h3>
       <div className="kpis">
         <Kpi label="Active users" info="u_active" value={fmtNum(k.active_users)} cur={k.active_users} prev={p.active_users} />
         <Kpi label="New users" info="u_new" value={fmtNum(k.new_users)} cur={k.new_users} prev={p.new_users} />
@@ -66,6 +69,7 @@ export default function Users() {
       </>)}
 
       {sub.key === "retention" && (<>
+      <AudienceRetention />
       <div className="kpis">
         <Kpi label="Came back within 7 days" info="u_r7" value={x.returned_7d_pct != null ? `${x.returned_7d_pct}%` : "—"}
              sub={`n = ${x.returned_7d_base ?? 0} users`} />

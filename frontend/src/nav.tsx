@@ -16,9 +16,9 @@ const STD: Applies = { date: true, internal: true };
 export const NAV: Section[] = [
   {
     path: "/overview", label: "Overview", icon: "🏠", subs: [
-      { key: "summary", label: "Summary", icon: "📊", question: "How is Bookkr doing in this period, and what changed since the previous one?", applies: STD },
-      { key: "bookings", label: "Bookings & GMV", icon: "💰", question: "How many flights were booked and how much money came in, day by day?", applies: STD },
-      { key: "demand", label: "Demand", icon: "📍", question: "Where do users want to fly and stay?", applies: STD },
+      { key: "summary", label: "Summary", icon: "📊", question: "How is Bookkr doing in this period, what changed, and does anything need action now?", applies: STD },
+      { key: "bookings", label: "Bookings & money", icon: "💰", question: "How many flights and hotels were booked, for how much, and how much of it was paid from the wallet?", applies: STD },
+      { key: "demand", label: "Demand", icon: "📍", question: "Where do users want to fly and stay, and what do they actually book?", applies: STD },
     ],
   },
   {
@@ -27,19 +27,36 @@ export const NAV: Section[] = [
       { key: "effort", label: "Speed & effort", icon: "⏱️", question: "How much effort does it take a user to reach a search?", applies: { ...STD, journey: true } },
       { key: "journeys", label: "Journeys compared", icon: "🧭", question: "Which kinds of trips do users come for, and which ones convert?", applies: STD },
       { key: "planning", label: "Trip planning", icon: "🗺️", question: "Do users ask Bookkr to plan a trip or search directly, and how far do plans get?", applies: STD },
+      { key: "checkout", label: "Checkout steps", icon: "🧾", question: "Once a user starts booking, at which checkout step do they drop off?", applies: STD },
     ],
   },
   {
     path: "/ops", label: "Booking & payment ops", icon: "💳", subs: [
-      { key: "attention", label: "Needs attention", icon: "🚨", question: "Which bookings need someone to act now (money taken, no ticket, stuck)?", applies: { all_time: true, internal: true } },
+      { key: "attention", label: "Needs action", icon: "🚨", question: "What needs someone now: money taken with no booking, bookings stuck at TripJack, customers waiting on support?", applies: { all_time: true, internal: true } },
+      { key: "payments", label: "Payments", icon: "💳", question: "How many Razorpay payments succeed, by method, why do the rest fail, and what was refunded?", applies: STD },
       { key: "outcomes", label: "Outcomes", icon: "📈", question: "How do booking attempts end, and why do they fail?", applies: { all_time: true, internal: true } },
+      { key: "support", label: "Support", icon: "🎧", question: "How many tickets came in, how fast were they closed, and who is waiting on us?", applies: STD },
+    ],
+  },
+  {
+    path: "/growth", label: "Growth", icon: "📈", subs: [
+      { key: "signups", label: "Signups & vouchers", icon: "✍️", question: "How many people signed up, and how many launch vouchers went out?", applies: STD },
+      { key: "wallet", label: "Wallet", icon: "👛", question: "How much wallet credit is outstanding, and are vouchers being used?", applies: STD },
+      { key: "sources", label: "Traffic sources", icon: "🧲", question: "Where do visitors come from, and which campaigns bring people who book?", applies: STD },
     ],
   },
   {
     path: "/users", label: "Users & retention", icon: "👥", subs: [
-      { key: "activity", label: "Activity", icon: "🙋", question: "How many people use Bookkr, and how many are new vs returning?", applies: STD },
+      { key: "activity", label: "Activity", icon: "🙋", question: "How many people use Bookkr: accounts vs guests, web vs app, new vs returning?", applies: STD },
       { key: "retention", label: "Retention", icon: "🔁", question: "Do users come back, and how soon?", applies: STD },
       { key: "behaviour", label: "Behaviour", icon: "🧪", question: "Do returning users behave differently, and who uses Bookkr the most?", applies: STD },
+    ],
+  },
+  {
+    path: "/quality", label: "Quality & reliability", icon: "✅", subs: [
+      { key: "ratings", label: "Reply ratings", icon: "👍", question: "How do users rate Bookkr's replies, and what do the thumbs-down say?", applies: STD },
+      { key: "errors", label: "Server errors", icon: "🧯", question: "Which endpoints fail, how often, and for how many users?", applies: STD },
+      { key: "operations", label: "Operations", icon: "🩺", question: "Are Bookkr's services up, and did the hotel catalogue sync run?", applies: {} },
     ],
   },
   { path: "/conversations", label: "Conversations", icon: "💬", subs: [] },
@@ -55,6 +72,7 @@ export const NAV: Section[] = [
       { key: "rules", label: "Rules", icon: "📐", question: "How the finder decides what counts as friction.", applies: {} },
     ],
   },
+  { path: "/tracker", label: "Feature tracker", icon: "📒", subs: [] },
 ];
 
 export const section = (path: string) => NAV.find((s) => s.path === path)!;
@@ -65,8 +83,6 @@ export function useSub(path: string): Sub {
   const s = section(path);
   return s.subs.find((x) => x.key === sub) ?? s.subs[0];
 }
-
-const RANGE: Record<number, string> = { 7: "Last 7 days", 30: "Last 30 days", 90: "Last 90 days", 0: "All time" };
 
 function FilterChips({ applies }: { applies: Applies }) {
   const { rangeLabel, excludeInternal } = useFilters();

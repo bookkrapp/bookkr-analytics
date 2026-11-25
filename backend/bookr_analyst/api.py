@@ -675,6 +675,13 @@ def _schedule():
         traceback.print_exc()
 
 
+# Ops-board parity: money, needs action, payments, support, checkout, growth, audience, quality (ops_api.py) --------
+
+from .ops_api import router as _ops_router  # noqa: E402  (imports _window and friends from this module)
+
+app.include_router(_ops_router)
+
+
 # Static frontend ------------------------------------------------------------
 
 DIST = PROJECT_ROOT / "frontend" / "dist"

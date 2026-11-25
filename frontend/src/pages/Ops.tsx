@@ -3,6 +3,8 @@ import { useApi } from "../api";
 import { Bars, Card, ErrorBox, Kpi, Loading, SevBadge, Table } from "../components";
 import { fmtDateTime, fmtINR, fmtNum, shortId } from "../format";
 import { PageHeader, useSub } from "../nav";
+import { NeedsActionLists } from "./NeedsAction";
+import { PaymentsPage, SupportPage } from "./OpsMore";
 
 export default function Ops() {
   const sub = useSub("/ops");
@@ -17,8 +19,13 @@ export default function Ops() {
     <>
       {head}
 
+      {sub.key === "payments" && <PaymentsPage />}
+      {sub.key === "support" && <SupportPage />}
+
       {sub.key === "attention" && (
         <>
+          <NeedsActionLists />
+          <h3 className="sec-h">All flight booking problems (from booking and payment status)</h3>
           <div className="kpis">
             <Kpi label="Money at risk" info="money_at_risk_banner" value={fmtINR(s.money_at_risk)} sub={`${s.critical} critical bookings`} />
             <Kpi label="Needs attention" info="needs_attention" value={fmtNum(s.critical + s.warning)} sub={`${s.critical} critical · ${s.warning} warning`} />

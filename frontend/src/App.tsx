@@ -13,6 +13,9 @@ import Users from "./pages/Users";
 import Friction from "./pages/Friction";
 import FrictionReview from "./pages/FrictionReview";
 import FrictionIssue from "./pages/FrictionIssue";
+import Growth from "./pages/Growth";
+import Quality from "./pages/Quality";
+import Tracker from "./pages/Tracker";
 
 /** Date range picker for the top bar: presets, plus Custom with two IST dates. */
 function RangePicker() {
@@ -113,6 +116,7 @@ export default function App() {
             return (
               <div key={s.path}>
                 {s.path === "/friction" && <div className="section">Model improvement</div>}
+                {s.path === "/tracker" && <div className="section">About</div>}
                 <NavLink to={s.path} className={open ? "active" : ""}><span><span aria-hidden className="nav-ico">{s.icon}</span>{s.label}</span></NavLink>
                 {open && s.subs.length > 0 && (
                   <div className="nav-subs">
@@ -151,6 +155,9 @@ export default function App() {
             <Route path="/funnel/:sub" element={<Funnel />} />
             <Route path="/ops/:sub" element={<Ops />} />
             <Route path="/users/:sub" element={<Users />} />
+            <Route path="/growth/:sub" element={<Growth />} />
+            <Route path="/quality/:sub" element={<Quality />} />
+            <Route path="/tracker" element={<Tracker />} />
             <Route path="/conversations" element={<Sessions />} />
             <Route path="/conversations/:id" element={<SessionDetail />} />
             <Route path="/ask" element={<Ask />} />

@@ -6,6 +6,7 @@ import JourneyPick, { useJourney } from "../JourneyPick";
 import { JOURNEY_LABEL } from "../journeys";
 import { PageHeader, useSub } from "../nav";
 import PlanningVsDirect from "./PlanningVsDirect";
+import Checkout from "./Checkout";
 
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(1)}%` : "—");
 
@@ -17,6 +18,7 @@ export default function Funnel() {
   const head = <PageHeader path="/funnel" sub={sub}>{filtered && <JourneyPick journey={journey} set={setJourney} />}</PageHeader>;
   const { data, error, loading } = useApi("/api/funnel", { journey: journey || undefined });
   if (sub.key === "planning") return <>{head}<PlanningVsDirect /></>;
+  if (sub.key === "checkout") return <>{head}<Checkout /></>;
   if (error) return <>{head}<ErrorBox error={error} /></>;
   if (loading && !data) return <>{head}<Loading /></>;
   const max = data.stages[0]?.sessions || 1;
