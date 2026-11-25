@@ -69,11 +69,11 @@ export function useSub(path: string): Sub {
 const RANGE: Record<number, string> = { 7: "Last 7 days", 30: "Last 30 days", 90: "Last 90 days", 0: "All time" };
 
 function FilterChips({ applies }: { applies: Applies }) {
-  const { days, excludeInternal } = useFilters();
+  const { rangeLabel, excludeInternal } = useFilters();
   const [sp] = useSearchParams();
   const j = sp.get("journey");
   const chips: ReactNode[] = [];
-  if (applies.date) chips.push(<span key="d" className="fchip">📅 {RANGE[days] ?? `Last ${days} days`}</span>);
+  if (applies.date) chips.push(<span key="d" className="fchip">📅 {rangeLabel}</span>);
   if (applies.all_time) chips.push(<span key="a" className="fchip muted-chip" title="The date range at the top doesn't apply here">📅 All time (date range not used)</span>);
   if (applies.period) chips.push(<span key="p" className="fchip" title="Pick the period below; the date range at the top doesn't apply here">📅 Period picked below</span>);
   if (applies.internal) chips.push(<span key="i" className="fchip">👤 Internal users {excludeInternal ? "excluded" : "included"}</span>);

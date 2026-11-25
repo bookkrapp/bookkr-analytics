@@ -7,10 +7,11 @@ Data lives in Postgres (ANALYST_DATABASE_URL), see db.py.
 from __future__ import annotations
 
 import base64
+import contextvars
 import secrets
 import threading
 import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -57,9 +58,59 @@ def _internal(alias: str, exclude: bool) -> str:
     return NOT_INTERNAL.format(alias=alias) if exclude else "true"
 
 
+# The date range at the top of every page: ?days=N (7/30/90, 0 = all time) as before, or ?range=today|yesterday|month,
+# or ?from=YYYY-MM-DD&to=YYYY-MM-DD (IST calendar days, both included). A middleware keeps these for _window, so every
+# endpoint that takes `days` follows them without a new parameter. "Now" is the last sync.
+_range_ctx: contextvars.ContextVar[dict] = contextvars.ContextVar("range", default={})
+MAX_CUSTOM_DAYS = 366
+
+
+@app.middleware("http")
+async def _range_from_query(request: Request, call_next):
+    token = _range_ctx.set({k: request.query_params.get(k) for k in ("range", "from", "to")})
+    try:
+        return await call_next(request)
+    finally:
+        _range_ctx.reset(token)
+
+
+def _ist_midnight_utc(d: date) -> datetime:
+    return datetime(d.year, d.month, d.day) - timedelta(minutes=OFF)
+
+
 def _window(con, days: int) -> dict:
     synced_at = con.execute("SELECT synced_at FROM sync_meta").fetchone()[0]
     end = synced_at + timedelta(seconds=1)
+    r = _range_ctx.get()
+    now_ist = synced_at + timedelta(minutes=OFF)
+    today = now_ist.date()
+    if r.get("from") or r.get("to"):
+        try:
+            f = date.fromisoformat(r.get("from") or "")
+            t = date.fromisoformat(r.get("to") or "")
+        except ValueError:
+            raise HTTPException(400, "from and to must be YYYY-MM-DD")
+        if f > t:
+            raise HTTPException(400, "from must be on or before to")
+        if (t - f).days + 1 > MAX_CUSTOM_DAYS:
+            raise HTTPException(400, f"Pick at most {MAX_CUSTOM_DAYS} days")
+        start, stop = _ist_midnight_utc(f), min(_ist_midnight_utc(t + timedelta(days=1)), end)
+        return {"start": start, "end": stop, "prev_start": start - (stop - start), "synced_at": synced_at}
+    preset = r.get("range")
+    if preset == "today":
+        start = _ist_midnight_utc(today)
+        return {"start": start, "end": end, "prev_start": start - timedelta(days=1), "prev_end": end - timedelta(days=1),
+                "synced_at": synced_at}
+    if preset == "yesterday":
+        start = _ist_midnight_utc(today - timedelta(days=1))
+        return {"start": start, "end": start + timedelta(days=1), "prev_start": start - timedelta(days=1),
+                "synced_at": synced_at}
+    if preset == "month":
+        start = _ist_midnight_utc(today.replace(day=1))
+        last_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        prev_start = _ist_midnight_utc(last_month)
+        return {"start": start, "end": end, "prev_start": prev_start, "prev_end": min(prev_start + (end - start), start),
+                "synced_at": synced_at}
     if days and days > 0:
         start = end - timedelta(days=days)
         prev_start = start - timedelta(days=days)
@@ -67,6 +118,13 @@ def _window(con, days: int) -> dict:
         first = con.execute("SELECT min(created_at) FROM raw_chat_sessions").fetchone()[0] or end
         start, prev_start = first, None
     return {"start": start, "end": end, "prev_start": prev_start, "synced_at": synced_at}
+
+
+def _prev(w: dict) -> tuple | None:
+    """(start, end) of the period the current one is compared with, or None for all time."""
+    if not w.get("prev_start"):
+        return None
+    return w["prev_start"], w.get("prev_end") or w["start"]
 
 
 # Meta & sync ----------------------------------------------------------------
@@ -143,7 +201,8 @@ def overview(days: int = 30, exclude_internal: bool = True):
     with connect() as con:
         w = _window(con, days)
         cur = _kpis(con, w["start"], w["end"], exclude_internal)
-        prev = _kpis(con, w["prev_start"], w["start"], exclude_internal) if w["prev_start"] else None
+        pw = _prev(w)
+        prev = _kpis(con, pw[0], pw[1], exclude_internal) if pw else None
         for k in (cur, prev):
             if k:
                 k["conversion_pct"] = round(100 * k["sessions_booked"] / k["sessions"], 1) if k["sessions"] else 0
@@ -503,7 +562,7 @@ def users_report(days: int = 30, exclude_internal: bool = True):
         w = _window(con, days)
         # day-level boundaries in IST
         to_d = lambda t: (t + timedelta(minutes=OFF)).date() if t else None  # noqa: E731
-        sd, ed = to_d(w["start"]), to_d(w["end"]) + timedelta(days=1)
+        sd, ed = to_d(w["start"]), to_d(w["end"] - timedelta(seconds=1)) + timedelta(days=1)
         psd = to_d(w["prev_start"]) if w["prev_start"] else None
         cur = _user_kpis(con, sd, ed, x)
         prev = _user_kpis(con, psd, sd, x) if psd else None

@@ -22,11 +22,11 @@ export async function getJSON<T = any>(path: string, params: Record<string, any>
 
 /** Fetch an endpoint with the global filters (days, exclude_internal) applied. */
 export function useApi<T = any>(path: string, extra: Record<string, any> = {}, opts: { useDays?: boolean } = {}) {
-  const { days, excludeInternal, refreshKey } = useFilters();
+  const { rangeParams, excludeInternal, refreshKey } = useFilters();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const params = { ...(opts.useDays === false ? {} : { days }), exclude_internal: excludeInternal, ...extra };
+  const params = { ...(opts.useDays === false ? {} : rangeParams()), exclude_internal: excludeInternal, ...extra };
   const key = path + JSON.stringify(params) + refreshKey;
   useEffect(() => {
     let alive = true;

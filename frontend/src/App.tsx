@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { getJSON } from "./api";
-import { useFilters } from "./filters";
+import { PRESETS, useFilters } from "./filters";
 import { NAV } from "./nav";
 import Overview from "./pages/Overview";
 import Funnel from "./pages/Funnel";
@@ -14,12 +14,28 @@ import Friction from "./pages/Friction";
 import FrictionReview from "./pages/FrictionReview";
 import FrictionIssue from "./pages/FrictionIssue";
 
-const RANGES = [
-  { label: "7d", days: 7 },
-  { label: "30d", days: 30 },
-  { label: "90d", days: 90 },
-  { label: "All", days: 0 },
-];
+/** Date range picker for the top bar: presets, plus Custom with two IST dates. */
+function RangePicker() {
+  const { preset, setPreset, custom, setCustom } = useFilters();
+  const [draft, setDraft] = useState(custom);
+  return (
+    <div style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="seg" role="group" aria-label="Date range">
+        {PRESETS.map((r) => (
+          <button key={r.key} className={preset === r.key ? "on" : ""} onClick={() => setPreset(r.key)}>{r.label}</button>
+        ))}
+      </div>
+      {preset === "custom" && (
+        <form className="custom-range" onSubmit={(e) => { e.preventDefault(); if (draft.from && draft.to) setCustom(draft); }}>
+          <input type="date" value={draft.from} max={draft.to || undefined} onChange={(e) => setDraft({ ...draft, from: e.target.value })} aria-label="From (IST)" />
+          <span className="muted small">to</span>
+          <input type="date" value={draft.to} min={draft.from || undefined} onChange={(e) => setDraft({ ...draft, to: e.target.value })} aria-label="To (IST)" />
+          <button className="btn" type="submit" disabled={!draft.from || !draft.to}>Apply</button>
+        </form>
+      )}
+    </div>
+  );
+}
 
 function SyncStatus() {
   const { bumpRefresh } = useFilters();
@@ -83,7 +99,7 @@ function FrictionOrReview() {
 }
 
 export default function App() {
-  const { days, setDays, excludeInternal, setExcludeInternal } = useFilters();
+  const { excludeInternal, setExcludeInternal } = useFilters();
   const loc = useLocation();
   return (
     <div className="shell">
@@ -116,13 +132,7 @@ export default function App() {
       <div className="main">
         <header className="topbar">
           <div className="controls">
-            <div className="seg" role="group" aria-label="Date range">
-              {RANGES.map((r) => (
-                <button key={r.label} className={days === r.days ? "on" : ""} onClick={() => setDays(r.days)}>
-                  {r.label}
-                </button>
-              ))}
-            </div>
+            <RangePicker />
             <label className="toggle" title="Hide users listed in INTERNAL_USER_IDS / INTERNAL_EMAIL_DOMAINS (.env)">
               <input type="checkbox" checked={excludeInternal} onChange={(e) => setExcludeInternal(e.target.checked)} />
               Exclude internal users
